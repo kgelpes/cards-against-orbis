@@ -2,10 +2,14 @@
 
 **The party card game where the winning card comes to life as live AI video.**
 
-Fill in the blank like any late-night card game. Then the judge flips each
-answer, and the big screen _turns into that scene_, live, in a few seconds.
-The judge watches every answer play out, crowns the best one, and that world
-keeps running on screen while the next round starts.
+![The TV replays a cached answer: a hamster in a tiny tuxedo on the throne of the galaxy, written in by a player](docs/hero.jpg)
+
+Fill in the blank like any late-night card game. Then the big screen, styled as
+a live TV broadcast, _tunes in to each answer_: Orbis renders every answer as its
+own live scene, and the judge flips between them instantly before crowning one.
+The winning world keeps running on air while the next round starts.
+
+Play it: **https://cards.bidslop.com**
 
 Built for the
 [Visko Orbis Online Challenge, September 2026](https://www.visko.ai/challenge/orbis-september-2026)
@@ -21,28 +25,30 @@ on [Orbis Stable](https://www.reactor.inc/models/visko-orbis-stable/api).
 3. Everyone else plays a white card from a hand of 7. The screen hides each hand
    until the right player taps "Show my cards", so you pass the device around.
    **Write-your-own** blank cards let you type anything, and it becomes video.
-4. **Live judging.** Answers arrive face down. The judge flips each one, and
-   Orbis steers the live video to that sentence. The judge literally watches
-   each answer before crowning one.
+4. **Live judging.** Answers arrive face down. The TV changes channel to each
+   answer in turn while Orbis renders it live, and each one is recorded as it
+   airs. Flipping a card then replays that answer instantly, so the judge can
+   compare every option before crowning one.
 5. **The reveal.** Confetti, a point, and the winning scene keeps playing.
 6. First to 3, 5 or 7 points wins. The finale shows **the reel**: a clip of every
    winning scene, plus a download of the full episode.
 
 ## Why Orbis is the game, not a gimmick
 
-Orbis runs one continuous, steerable video stream. That shapes every part of
-the design:
-
-- **One world for the whole game.** The stream never cuts. Each preview and each
-  winner morphs the same world into the next scene, so a game becomes one
-  strange movie that the table wrote together.
-- **Judging is real-time interaction.** The judge flips through answers and the
-  scene follows each tap within a few seconds. Without real-time steering,
-  this mechanic cannot exist.
-- **The video is the scoreboard of taste.** Players learn to write for the
-  camera: concrete, filmable, absurd.
+- **Judging is real-time interaction.** Every answer becomes its own live Orbis
+  scene. The judge watches each one air, then flips between instant replays.
+  Without real-time generation, this mechanic cannot exist.
+- **A new world per answer.** Each scene is a hard cut to a fresh Orbis run, so
+  every answer gets its own universe instead of a morph of the last one.
+- **It looks like TV on purpose.** The whole game is a late-night game show, so
+  a WebGL shader draws the stream as a glowing CRT broadcast: full color,
+  curved glass, scanlines. Every scene change is a channel flip with static,
+  which also covers the seconds while Orbis starts the new scene.
+- **The winner stays on air.** The winning scene keeps running while players
+  pick their next cards. The finale reel replays every winning scene.
 - **Warm-up is hidden in play.** The studio connects when the game starts, so
-  the model boots while players pick their first cards.
+  the model boots while players pick their first cards. If Orbis is at
+  capacity, the app retries on its own.
 
 ## Run it
 
@@ -67,12 +73,13 @@ The first boot of the model can take a minute; play cards while it warms up.
 
 ## How it works
 
-| Piece                        | What it does                                                                                                                                                                                                                        |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lib/game.ts`                | Pure game rules: deal, play, judge rotation, crown, bots, write-in cards. Tested with `pnpm test`.                                                                                                                                  |
-| `lib/cards.ts`               | 45 black and 150 white original cards, written to make strong pictures (places, camera setups, creatures, chaos), not text-only jokes.                                                                                              |
-| `hooks/use-orbis-session.ts` | `show(prompt)`: the first call does `set_prompt` → waits for `conditions_ready` → `start`; later calls `set_prompt` on the live run. Fast taps coalesce to the latest prompt. Restarts the run if Orbis ends it. Clips and episode download use the SDK recorder. |
-| `components/game.tsx`        | The studio UI: live stage with ambient glow, chyron captions, hands, flip-to-preview judging, reveal, finale reel.                                                                                                                  |
-| `app/api/token/route.ts`     | Exchanges the server-side API key for a short-lived, single-session JWT. The key never reaches the browser.                                                                                                                         |
+| Piece                        | What it does                                                                                                                                                                                                                                                                            |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lib/game.ts`                | Pure game rules: deal, play, judge rotation, crown, bots, write-in cards. Tested with `pnpm test`.                                                                                                                                                                                      |
+| `lib/cards.ts`               | 45 black and 150 white original cards, written to make strong pictures (places, camera setups, creatures, chaos), not text-only jokes.                                                                                                                                                  |
+| `hooks/use-orbis-session.ts` | `show(prompt)`: a hard cut to a new world (`reset` → `set_prompt` → wait for `conditions_ready` → `start`). Fast changes coalesce to the latest prompt. `record(seconds)` records the live track in the browser (MediaRecorder) for instant replays. Restarts the run if Orbis ends it. |
+| `components/tube.tsx`        | WebGL shader that draws any `<video>` (the live stream or a recorded replay) as a CRT broadcast: barrel curve, RGB fringe, scanlines, glow, and channel-flip static while a new scene tunes in.                                                                                         |
+| `components/game.tsx`        | The studio UI: live stage with ambient glow, chyron captions, hands, flip-to-preview judging, reveal, finale reel.                                                                                                                                                                      |
+| `app/api/token/route.ts`     | Exchanges the server-side API key for a short-lived, single-session JWT. The key never reaches the browser.                                                                                                                                                                             |
 
 Stack: Next.js 16, React 19, `@reactor-team/js-sdk`, Motion, canvas-confetti.
