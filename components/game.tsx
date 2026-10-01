@@ -54,11 +54,33 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
   const [clips, setClips] = useState<(Clip | null)[]>([]);
   const desired = useRef("");
   const show = useRef(0);
+  const live = useRef(orbis);
+  live.current = orbis;
+  const pending = useRef<{ index: number; at: number; timer: ReturnType<typeof setTimeout> } | null>(
+    null,
+  );
 
   const want = (prompt: string) => {
     if (desired.current === prompt) return;
     desired.current = prompt;
-    if (orbis.connected) orbis.show(prompt);
+    if (live.current.connected) live.current.show(prompt);
+  };
+
+  const takeClip = () => {
+    const shot = pending.current;
+    if (!shot) return;
+    pending.current = null;
+    clearTimeout(shot.timer);
+    const id = show.current;
+    const seconds = Math.min(10, Math.max(4, Math.round((Date.now() - shot.at) / 1000)));
+    void live.current.clip(seconds).then((clip) => {
+      if (show.current !== id) return;
+      setClips((list) => {
+        const next = [...list];
+        next[shot.index] = clip;
+        return next;
+      });
+    });
   };
 
   useEffect(() => {
@@ -73,23 +95,19 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
       const round = game.history[game.history.length - 1];
       want(scene(round.sentence));
       burst();
-      const index = game.history.length - 1;
-      const id = show.current;
-      setTimeout(async () => {
-        const clip = await orbis.clip(10);
-        if (show.current !== id) return;
-        setClips((list) => {
-          const next = [...list];
-          next[index] = clip;
-          return next;
-        });
-      }, 11_000);
+      pending.current = {
+        index: game.history.length - 1,
+        at: Date.now(),
+        timer: setTimeout(takeClip, 12_000),
+      };
     }
     if (game.phase === "over") want(FINALE_PROMPT);
   }, [phase, rounds]);
 
   const start = () => {
     show.current += 1;
+    if (pending.current) clearTimeout(pending.current.timer);
+    pending.current = null;
     setGame(newGame(seats, { black: BLACK_CARDS, white: WHITE_CARDS }, target));
     setClips([]);
     setPreview(null);
@@ -99,6 +117,8 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
 
   const exit = () => {
     show.current += 1;
+    if (pending.current) clearTimeout(pending.current.timer);
+    pending.current = null;
     setGame(null);
     desired.current = "";
     void orbis.close();
@@ -203,6 +223,7 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
                 judge={judge}
                 quip={QUIPS[(rounds - 1) % QUIPS.length]}
                 onNext={() => {
+                  takeClip();
                   setPreview(null);
                   setGame((current) => (current ? nextRound(current, BLACK_CARDS) : current));
                 }}

@@ -44,7 +44,10 @@ test("a full round with humans and bots", () => {
     random,
   );
   assert.equal(game.phase, "picking");
-  for (const player of game.players) assert.equal(player.hand.length, 7);
+  for (const player of game.players) {
+    assert.equal(player.hand.length, 7);
+    assert.ok(player.hand.includes(BLANK));
+  }
 
   const humans = waitingOn(game);
   assert.ok(humans.every((player) => !player.bot));
@@ -91,4 +94,22 @@ test("judge rotates and blank card needs text", () => {
   game = nextRound(crown(game, 1), decks.black, random);
   assert.equal(game.phase, "picking");
   assert.equal(game.judge, (judge + 1) % 3);
+});
+
+test("an empty white deck refills from the discard pile", () => {
+  const random = seeded(11);
+  let game = newGame(
+    [
+      { name: "A", bot: true },
+      { name: "B", bot: true },
+      { name: "C", bot: true },
+    ],
+    { black: decks.black, white: decks.white.slice(0, 20) },
+    99,
+    random,
+  );
+  for (let round = 0; round < 30; round++) {
+    assert.equal(game.phase, "judging", `round ${round} stuck in ${game.phase}`);
+    game = nextRound(crown(game, 0), decks.black, random);
+  }
 });

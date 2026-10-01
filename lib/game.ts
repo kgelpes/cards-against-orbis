@@ -25,6 +25,7 @@ export type Game = {
   black: string;
   blackDeck: string[];
   whiteDeck: string[];
+  discard: string[];
   picks: Pick[];
   winner: Pick | null;
   history: Round[];
@@ -62,7 +63,7 @@ function botPicks(game: Game, random: () => number): Game {
     if (!player.bot || player.id === judgeOf(game).id) continue;
     const options = player.hand.filter((card) => card !== BLANK);
     const card = options[Math.floor(random() * options.length)] ?? player.hand[0];
-    next = play(next, player.id, card, "", random);
+    next = play(next, player.id, card, "a very confused robot", random);
   }
   return next;
 }
@@ -73,11 +74,11 @@ export function newGame(
   target: number,
   random = Math.random,
 ): Game {
-  const whitePool = [...decks.white, ...Array.from({ length: 10 }, () => BLANK)];
+  const whitePool = [...decks.white, ...Array.from({ length: 6 }, () => BLANK)];
   let whiteDeck = shuffle(whitePool, random);
   const players = seats.map((seat, index) => {
-    const hand = whiteDeck.slice(0, HAND_SIZE);
-    whiteDeck = whiteDeck.slice(HAND_SIZE);
+    const hand = [...whiteDeck.slice(0, HAND_SIZE - 1), BLANK];
+    whiteDeck = whiteDeck.slice(HAND_SIZE - 1);
     return { id: `p${index}`, name: seat.name, bot: seat.bot, hand, score: 0 };
   });
   const blackDeck = shuffle(decks.black, random);
@@ -87,6 +88,7 @@ export function newGame(
     black: blackDeck[0],
     blackDeck: blackDeck.slice(1),
     whiteDeck,
+    discard: [],
     picks: [],
     winner: null,
     history: [],
@@ -125,13 +127,21 @@ export function play(
   const answer = card === BLANK ? written.trim() : card;
   if (!answer) return game;
 
+  const discard = card === BLANK ? game.discard : [...game.discard, card];
+  const deck = game.whiteDeck.length ? game.whiteDeck : shuffle(discard, random);
   const hand = [...player.hand];
-  hand.splice(hand.indexOf(card), 1, game.whiteDeck[0] ?? BLANK);
+  hand.splice(hand.indexOf(card), 1, deck[0] ?? BLANK);
   const players = game.players.map((item) =>
     item.id === playerId ? { ...item, hand } : item,
   );
   const picks = [...game.picks, { playerId, card: answer }];
-  const next = { ...game, players, picks, whiteDeck: game.whiteDeck.slice(1) };
+  const next = {
+    ...game,
+    players,
+    picks,
+    whiteDeck: deck.slice(1),
+    discard: game.whiteDeck.length ? discard : [],
+  };
   if (waitingOn(next).length > 0) return next;
   return { ...next, phase: "judging", picks: shuffle(picks, random) };
 }
