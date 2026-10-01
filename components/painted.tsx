@@ -2,77 +2,62 @@
 
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
-const PALETTE = [
-  "be4a2f",
-  "d77643",
-  "ead4aa",
-  "e4a672",
-  "b86f50",
-  "733e39",
-  "3e2731",
-  "a22633",
-  "e43b44",
-  "f77622",
-  "feae34",
-  "fee761",
-  "63c74d",
-  "3e8948",
-  "265c42",
-  "193c3e",
-  "124e89",
-  "0099db",
-  "2ce8f5",
-  "ffffff",
-  "c0cbdc",
-  "8b9bb4",
-  "5a6988",
-  "3a4466",
-  "262b44",
-  "181425",
-  "ff0044",
-  "68386c",
-  "b55088",
-  "f6757a",
-  "e8b796",
-  "c28569",
-];
-
 const VERT = `attribute vec2 p; void main() { gl_Position = vec4(p, 0.0, 1.0); }`;
 
 const FRAG = `
 precision mediump float;
 uniform sampler2D u_tex;
 uniform vec2 u_res;
-uniform vec3 u_pal[32];
+uniform float u_radius;
 
-float bayer(vec2 p) {
-  vec2 q = mod(p, 4.0);
-  float i = q.x + q.y * 4.0;
-  float m[16];
-  m[0]=0.;m[1]=8.;m[2]=2.;m[3]=10.;m[4]=12.;m[5]=4.;m[6]=14.;m[7]=6.;
-  m[8]=3.;m[9]=11.;m[10]=1.;m[11]=9.;m[12]=15.;m[13]=7.;m[14]=13.;m[15]=5.;
-  for (int k = 0; k < 16; k++) if (float(k) == i) return (m[k] + 0.5) / 16.0;
-  return 0.5;
-}
+vec3 tex(vec2 uv) { return texture2D(u_tex, clamp(uv, 0.0, 1.0)).rgb; }
+float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
 
 void main() {
-  vec2 cell = floor(gl_FragCoord.xy);
-  vec2 uv = (cell + 0.5) / u_res;
-  uv.y = 1.0 - uv.y;
-  vec2 o = 0.25 / u_res;
-  vec3 c = (texture2D(u_tex, uv + vec2(-o.x, -o.y)).rgb + texture2D(u_tex, uv + vec2(o.x, -o.y)).rgb
-          + texture2D(u_tex, uv + vec2(-o.x, o.y)).rgb + texture2D(u_tex, uv + vec2(o.x, o.y)).rgb) * 0.25;
-  float l = dot(c, vec3(0.299, 0.587, 0.114));
-  c = mix(vec3(l), c, 1.25);
-  c = (c - 0.5) * 1.12 + 0.52 + (bayer(cell) - 0.5) * 0.06;
-  vec3 best = u_pal[0];
-  float bestD = 99.0;
-  for (int i = 0; i < 32; i++) {
-    vec3 d = u_pal[i] - c;
-    float e = dot(d * vec3(0.30, 0.59, 0.11), d * vec3(0.30, 0.59, 0.11)) + 0.25 * dot(d, d);
-    if (e < bestD) { bestD = e; best = u_pal[i]; }
+  vec2 frag = vec2(gl_FragCoord.x, u_res.y - gl_FragCoord.y);
+  vec2 uv = frag / u_res;
+  vec2 px = 1.0 / u_res;
+  vec3 m0 = vec3(0.0), m1 = vec3(0.0), m2 = vec3(0.0), m3 = vec3(0.0);
+  vec3 s0 = vec3(0.0), s1 = vec3(0.0), s2 = vec3(0.0), s3 = vec3(0.0);
+  float n = 0.0;
+  for (int j = 0; j <= 5; j++) {
+    for (int i = 0; i <= 5; i++) {
+      if (float(i) > u_radius || float(j) > u_radius) continue;
+      vec2 o = vec2(float(i), float(j)) * px;
+      vec3 c;
+      c = tex(uv + vec2(-o.x, -o.y)); m0 += c; s0 += c * c;
+      c = tex(uv + vec2(o.x, -o.y)); m1 += c; s1 += c * c;
+      c = tex(uv + vec2(-o.x, o.y)); m2 += c; s2 += c * c;
+      c = tex(uv + vec2(o.x, o.y)); m3 += c; s3 += c * c;
+      n += 1.0;
+    }
   }
-  gl_FragColor = vec4(best, 1.0);
+  m0 /= n; m1 /= n; m2 /= n; m3 /= n;
+  float v0 = dot(abs(s0 / n - m0 * m0), vec3(1.0));
+  float v1 = dot(abs(s1 / n - m1 * m1), vec3(1.0));
+  float v2 = dot(abs(s2 / n - m2 * m2), vec3(1.0));
+  float v3 = dot(abs(s3 / n - m3 * m3), vec3(1.0));
+  vec3 col = m0;
+  float best = v0;
+  if (v1 < best) { best = v1; col = m1; }
+  if (v2 < best) { best = v2; col = m2; }
+  if (v3 < best) { best = v3; col = m3; }
+
+  vec2 o = 1.6 * px;
+  float tl = luma(tex(uv + vec2(-o.x, o.y))), t = luma(tex(uv + vec2(0.0, o.y))), tr = luma(tex(uv + o));
+  float l = luma(tex(uv - vec2(o.x, 0.0))), r = luma(tex(uv + vec2(o.x, 0.0)));
+  float bl = luma(tex(uv - o)), b = luma(tex(uv - vec2(0.0, o.y))), br = luma(tex(uv + vec2(o.x, -o.y)));
+  float gx = -tl - 2.0 * l - bl + tr + 2.0 * r + br;
+  float gy = -bl - 2.0 * b - br + tl + 2.0 * t + tr;
+  float edge = smoothstep(0.4, 0.85, length(vec2(gx, gy)));
+
+  float g = luma(col);
+  col = mix(vec3(g), col, 1.3);
+  col = mix(col, col * 0.25, edge * 0.6);
+  col *= vec3(1.04, 1.0, 0.94);
+  vec2 q = uv - 0.5;
+  col *= 1.0 - dot(q, q) * 0.8;
+  gl_FragColor = vec4(col, 1.0);
 }`;
 
 function compile(gl: WebGLRenderingContext) {
@@ -92,7 +77,15 @@ function compile(gl: WebGLRenderingContext) {
   return gl.getProgramParameter(program, gl.LINK_STATUS) ? program : null;
 }
 
-export function Pixelate({ children, width = 160 }: { children: ReactNode; width?: number }) {
+export function Painted({
+  children,
+  width = 640,
+  radius = 5,
+}: {
+  children: ReactNode;
+  width?: number;
+  radius?: number;
+}) {
   const host = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [raw, setRaw] = useState(false);
@@ -117,10 +110,7 @@ export function Pixelate({ children, width = 160 }: { children: ReactNode; width
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.uniform2f(gl.getUniformLocation(program, "u_res"), width, height);
-    gl.uniform3fv(
-      gl.getUniformLocation(program, "u_pal"),
-      PALETTE.flatMap((hex) => [0, 2, 4].map((at) => parseInt(hex.slice(at, at + 2), 16) / 255)),
-    );
+    gl.uniform1f(gl.getUniformLocation(program, "u_radius"), radius);
     gl.viewport(0, 0, width, height);
 
     let frame = 0;
@@ -140,11 +130,11 @@ export function Pixelate({ children, width = 160 }: { children: ReactNode; width
     };
     frame = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(frame);
-  }, [width, height]);
+  }, [width, height, radius]);
 
   return (
-    <div ref={host} className={`pixelate ${raw ? "raw" : ""}`}>
-      <div className="pixelate-source">{children}</div>
+    <div ref={host} className={`painted ${raw ? "raw" : ""}`}>
+      <div className="painted-source">{children}</div>
       <canvas ref={canvas} width={width} height={height} aria-hidden />
     </div>
   );

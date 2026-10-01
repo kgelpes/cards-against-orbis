@@ -5,7 +5,7 @@ import confetti from "canvas-confetti";
 import { AnimatePresence, motion } from "motion/react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
-import { Pixelate } from "@/components/pixelate";
+import { Painted } from "@/components/painted";
 import type { OrbisSession } from "@/hooks/use-orbis-session";
 import { BLACK_CARDS, WHITE_CARDS } from "@/lib/cards";
 import {
@@ -519,14 +519,14 @@ function Stage({ orbis, kicker, line }: { orbis: OrbisSession; kicker: string; l
       <div className="screen">
         {orbis.connected && (
           <div className="feed">
-            <Pixelate>
+            <Painted>
               <ReactorView
                 track="main_video"
                 audioTrack="main_audio"
                 muted={orbis.muted}
                 videoObjectFit="cover"
               />
-            </Pixelate>
+            </Painted>
           </div>
         )}
         <AnimatePresence>
@@ -1041,9 +1041,9 @@ function Finale({
             >
               <div className="reel-shot">
                 {clip ? (
-                  <Pixelate width={128}>
+                  <Painted width={320} radius={3}>
                     <ClipPlayer clip={clip} muted autoPlay />
-                  </Pixelate>
+                  </Painted>
                 ) : (
                   <span className="reel-still">
                     <Orbit size={28} />
