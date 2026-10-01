@@ -1,8 +1,8 @@
 "use client";
 
-import { type Clip, ClipPlayer, ReactorView } from "@reactor-team/js-sdk";
+import { ReactorView } from "@reactor-team/js-sdk";
 import confetti from "canvas-confetti";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { Tube } from "@/components/tube";
@@ -53,7 +53,8 @@ const COLORS = [
   "#ffe27a",
   "#8fb3ff",
 ];
-const SPRING = { type: "spring", stiffness: 320, damping: 26 } as const;
+const SPRING = { type: "spring", duration: 0.3, bounce: 0.12 } as const;
+const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 
 export function Game({ orbis }: { orbis: OrbisSession }) {
   const [seats, setSeats] = useState<Seat[]>([]);
@@ -61,38 +62,18 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
   const [game, setGame] = useState<GameState | null>(null);
   const [preview, setPreview] = useState<number | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
-  const [clips, setClips] = useState<(Clip | null)[]>([]);
+  const [clips, setClips] = useState<(string | null)[]>([]);
+  const [cache, setCache] = useState<(string | null | undefined)[]>([]);
+  const [rendering, setRendering] = useState<number | null>(null);
+  const [winnerClip, setWinnerClip] = useState<string | null>(null);
   const desired = useRef("");
   const show = useRef(0);
   const live = useRef(orbis);
   live.current = orbis;
-  const pending = useRef<{
-    index: number;
-    at: number;
-    timer: ReturnType<typeof setTimeout>;
-  } | null>(null);
-
   const want = (prompt: string) => {
     if (desired.current === prompt) return;
     desired.current = prompt;
     if (live.current.connected) live.current.show(prompt);
-  };
-
-  const takeClip = () => {
-    const shot = pending.current;
-    if (!shot) return;
-    pending.current = null;
-    clearTimeout(shot.timer);
-    const id = show.current;
-    const seconds = Math.min(10, Math.max(4, Math.round((Date.now() - shot.at) / 1000)));
-    void live.current.clip(seconds).then((clip) => {
-      if (show.current !== id) return;
-      setClips((list) => {
-        const next = [...list];
-        next[shot.index] = clip;
-        return next;
-      });
-    });
   };
 
   useEffect(() => {
@@ -101,36 +82,87 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
 
   const phase = game?.phase;
   const rounds = game?.history.length ?? 0;
+  const answerPrompt = (index: number) =>
+    game ? scene(fill(game.black, game.picks[index]?.card ?? "")) : "";
+
   useEffect(() => {
     if (!game) return;
+    if (game.phase === "judging") {
+      setCache([]);
+      setRendering(null);
+      setPreview(null);
+      setWinnerClip(null);
+    }
     if (game.phase === "reveal") {
       const round = game.history[game.history.length - 1];
       want(scene(round.sentence));
       burst();
-      pending.current = {
-        index: game.history.length - 1,
-        at: Date.now(),
-        timer: setTimeout(takeClip, 12_000),
-      };
     }
     if (game.phase === "over") want(FINALE_PROMPT);
   }, [phase, rounds]);
 
+  useEffect(() => {
+    if (!game || game.phase !== "judging" || rendering !== null || !orbis.connected) return;
+    const all = game.picks.map((_, index) => index);
+    const order = preview === null ? all : [preview, ...all];
+    const next = order.find((index) => cache[index] === undefined);
+    if (next === undefined) {
+      if (preview !== null && cache[preview] === null) want(answerPrompt(preview));
+      return;
+    }
+    setRendering(next);
+    want(answerPrompt(next));
+  }, [phase, rendering, cache, preview, orbis.connected]);
+
+  useEffect(() => {
+    if (rendering === null || orbis.live !== answerPrompt(rendering)) return;
+    const id = show.current;
+    const index = rendering;
+    const timer = setTimeout(async () => {
+      const clip = await live.current.record(6);
+      if (show.current !== id) return;
+      setCache((list) => {
+        const next = [...list];
+        next[index] = clip;
+        return next;
+      });
+      setRendering(null);
+    }, 1_200);
+    return () => clearTimeout(timer);
+  }, [rendering, orbis.live]);
+
+  useEffect(() => {
+    if (!game || game.phase !== "reveal" || winnerClip || clips[rounds - 1] !== undefined) return;
+    const sentence = game.history[rounds - 1]?.sentence ?? "";
+    if (orbis.live !== scene(sentence)) return;
+    const id = show.current;
+    const index = rounds - 1;
+    const timer = setTimeout(async () => {
+      const clip = await live.current.record(6);
+      if (show.current !== id) return;
+      setClips((list) => {
+        const next = [...list];
+        next[index] = clip;
+        return next;
+      });
+    }, 1_200);
+    return () => clearTimeout(timer);
+  }, [phase, rounds, orbis.live, winnerClip]);
+
   const start = () => {
     show.current += 1;
-    if (pending.current) clearTimeout(pending.current.timer);
-    pending.current = null;
     setGame(newGame(seats, { black: BLACK_CARDS, white: WHITE_CARDS }, target));
     setClips([]);
     setPreview(null);
+    setRendering(null);
+    setCache([]);
+    setWinnerClip(null);
     want(LOBBY_PROMPT);
     if (!orbis.connected) void orbis.open();
   };
 
   const exit = () => {
     show.current += 1;
-    if (pending.current) clearTimeout(pending.current.timer);
-    pending.current = null;
     setGame(null);
     desired.current = "";
     void orbis.close();
@@ -160,104 +192,132 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
 
   const round = game.phase === "reveal" || game.phase === "over" ? rounds : rounds + 1;
   const last = game.history[game.history.length - 1];
+  const previewClip = preview === null ? undefined : cache[preview];
+  const renderingPick = rendering === null ? null : game.picks[rendering];
+  const stageClip =
+    game.phase === "judging" && preview !== null
+      ? previewClip
+        ? previewClip
+        : orbis.live === answerPrompt(preview)
+          ? null
+          : "static"
+      : game.phase === "reveal" && orbis.tuning && winnerClip
+        ? winnerClip
+        : null;
   const caption =
     game.phase === "reveal" && winner && last
       ? { kicker: `★ ${winner.name} wins round ${rounds}`, line: last.sentence }
       : game.phase === "judging" && previewPick && preview !== null
         ? {
-            kicker: `Live preview · answer ${preview + 1} of ${game.picks.length}`,
+            kicker: previewClip
+              ? `Replay · answer ${preview + 1} of ${game.picks.length}`
+              : `Tuning in · answer ${preview + 1} of ${game.picks.length}`,
             line: fill(game.black, previewPick.card),
           }
-        : game.phase === "over"
+        : game.phase === "judging" && renderingPick && rendering !== null
           ? {
-              kicker: "Season finale",
-              line: `${champion(game)?.name ?? "Someone"} takes the trophy.`,
+              kicker: `Rendering answer ${rendering + 1} of ${game.picks.length}`,
+              line: fill(game.black, renderingPick.card),
             }
-          : last
-            ? { kicker: "Still playing", line: last.sentence }
-            : {
-                kicker: "Live from the Orbis studio",
-                line: "Tonight's episode is about to begin.",
-              };
+          : game.phase === "over"
+            ? {
+                kicker: "Season finale",
+                line: `${champion(game)?.name ?? "Someone"} takes the trophy.`,
+              }
+            : last
+              ? { kicker: "Still playing", line: last.sentence }
+              : {
+                  kicker: "Live from the Orbis studio",
+                  line: "Tonight's episode is about to begin.",
+                };
 
   return (
-    <div className="app">
-      <header className="bar">
-        <Brand />
-        <div className="bar-meta">
-          <span>Round {Math.max(round, 1)}</span>
-          <span className="dot" />
-          <span>First to {game.target}</span>
+    <MotionConfig reducedMotion="user">
+      <div className="app">
+        <header className="bar">
+          <Brand />
+          <div className="bar-meta">
+            <span>Round {Math.max(round, 1)}</span>
+            <span className="dot" />
+            <span>First to {game.target}</span>
+          </div>
+          <button className="ghost small" onClick={exit}>
+            End show
+          </button>
+        </header>
+
+        <div className="arena">
+          <Stage orbis={orbis} kicker={caption.kicker} line={caption.line} clip={stageClip} />
+          <aside className="side">
+            <BlackCard text={game.black} answer={answer} />
+            <Scoreboard game={game} />
+          </aside>
         </div>
-        <button className="ghost small" onClick={exit}>
-          End show
-        </button>
-      </header>
 
-      <div className="arena">
-        <Stage orbis={orbis} kicker={caption.kicker} line={caption.line} />
-        <aside className="side">
-          <BlackCard text={game.black} answer={answer} />
-          <Scoreboard game={game} />
-        </aside>
+        <section className="tray">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={`${game.phase}-${rounds}`}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0, transition: { duration: 0.2, ease: EASE_OUT } }}
+              exit={{ opacity: 0, y: -6, transition: { duration: 0.12, ease: EASE_OUT } }}
+            >
+              {game.phase === "picking" && (
+                <Picking
+                  game={game}
+                  onDraft={setDraft}
+                  onPlay={(playerId, card, written) => {
+                    setDraft(null);
+                    setGame((current) =>
+                      current ? play(current, playerId, card, written) : current,
+                    );
+                  }}
+                />
+              )}
+              {game.phase === "judging" && (
+                <Judging
+                  game={game}
+                  focus={preview}
+                  cache={cache}
+                  rendering={rendering}
+                  onLook={setPreview}
+                  onCrown={(index) => {
+                    const clip = cache[index] ?? null;
+                    setRendering(null);
+                    setWinnerClip(clip);
+                    if (clip) {
+                      setClips((list) => {
+                        const next = [...list];
+                        next[rounds] = clip;
+                        return next;
+                      });
+                    }
+                    setGame((current) => (current ? crown(current, index) : current));
+                  }}
+                />
+              )}
+              {game.phase === "reveal" && winner && game.winner && (
+                <Reveal
+                  card={game.winner.card}
+                  winner={winner}
+                  sentence={last?.sentence ?? ""}
+                  final={Boolean(champion(game))}
+                  judge={judge}
+                  quip={QUIPS[(rounds - 1) % QUIPS.length]}
+                  onNext={() => {
+                    setPreview(null);
+                    setGame((current) => (current ? nextRound(current, BLACK_CARDS) : current));
+                  }}
+                />
+              )}
+              {game.phase === "over" && (
+                <Finale game={game} clips={clips} orbis={orbis} onAgain={start} />
+              )}
+            </motion.div>
+          </AnimatePresence>
+        </section>
       </div>
-
-      <section className="tray">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={`${game.phase}-${rounds}`}
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
-            transition={{ duration: 0.28, ease: [0.2, 0.8, 0.2, 1] }}
-          >
-            {game.phase === "picking" && (
-              <Picking
-                game={game}
-                onDraft={setDraft}
-                onPlay={(playerId, card, written) => {
-                  setDraft(null);
-                  setGame((current) =>
-                    current ? play(current, playerId, card, written) : current,
-                  );
-                }}
-              />
-            )}
-            {game.phase === "judging" && (
-              <Judging
-                game={game}
-                focus={preview}
-                onLook={(index) => {
-                  setPreview(index);
-                  want(scene(fill(game.black, game.picks[index].card)));
-                }}
-                onCrown={(index) =>
-                  setGame((current) => (current ? crown(current, index) : current))
-                }
-              />
-            )}
-            {game.phase === "reveal" && winner && game.winner && (
-              <Reveal
-                card={game.winner.card}
-                winner={winner}
-                sentence={last?.sentence ?? ""}
-                final={Boolean(champion(game))}
-                judge={judge}
-                quip={QUIPS[(rounds - 1) % QUIPS.length]}
-                onNext={() => {
-                  takeClip();
-                  setPreview(null);
-                  setGame((current) => (current ? nextRound(current, BLACK_CARDS) : current));
-                }}
-              />
-            )}
-            {game.phase === "over" && (
-              <Finale game={game} clips={clips} orbis={orbis} onAgain={start} />
-            )}
-          </motion.div>
-        </AnimatePresence>
-      </section>
-    </div>
+    </MotionConfig>
   );
 }
 
@@ -334,21 +394,26 @@ function Title({
     <main className="title">
       <div className="title-glow" aria-hidden />
       <section className="title-copy">
-        <motion.p className="eyebrow" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+        <motion.p
+          className="eyebrow"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.3, ease: EASE_OUT }}
+        >
           <Orbit size={16} /> A live-video party game
         </motion.p>
         <motion.h1
-          initial={{ opacity: 0, y: 24 }}
+          initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, ease: [0.2, 0.8, 0.2, 1] }}
+          transition={{ duration: 0.45, ease: EASE_OUT }}
         >
           Cards Against <em>Orbis</em>
         </motion.h1>
         <motion.p
           className="lede"
-          initial={{ opacity: 0, y: 16 }}
+          initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15, duration: 0.6 }}
+          transition={{ delay: 0.06, duration: 0.4, ease: EASE_OUT }}
         >
           Fill in the blank. Then watch the winning card <b>come to life</b> as live AI video,
           streamed in real time by Orbis. One world, one screen, steered by your worst ideas.
@@ -372,9 +437,9 @@ function Title({
         <div className="hero-cards" aria-hidden>
           <motion.div
             className="card black hero-black"
-            initial={{ rotate: -14, y: 40, opacity: 0 }}
+            initial={{ rotate: -12, y: 24, opacity: 0 }}
             animate={{ rotate: -8, y: 0, opacity: 1 }}
-            transition={{ ...SPRING, delay: 0.25 }}
+            transition={{ type: "spring", duration: 0.5, bounce: 0.2, delay: 0.12 }}
           >
             <p>
               Live on the evening news: <span className="blank" /> has taken over the city.
@@ -383,9 +448,9 @@ function Title({
           </motion.div>
           <motion.div
             className="card white hero-white"
-            initial={{ rotate: 18, y: 60, opacity: 0 }}
+            initial={{ rotate: 14, y: 32, opacity: 0 }}
             animate={{ rotate: 7, y: 0, opacity: 1 }}
-            transition={{ ...SPRING, delay: 0.4 }}
+            transition={{ type: "spring", duration: 0.5, bounce: 0.2, delay: 0.2 }}
           >
             <p>A herd of tiny, furious goats.</p>
             <CardFoot />
@@ -395,9 +460,9 @@ function Title({
 
       <motion.form
         className="setup"
-        initial={{ opacity: 0, y: 30 }}
+        initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2, duration: 0.6, ease: [0.2, 0.8, 0.2, 1] }}
+        transition={{ delay: 0.1, duration: 0.4, ease: EASE_OUT }}
         onSubmit={(event) => {
           event.preventDefault();
           add({ name, bot: false });
@@ -412,9 +477,10 @@ function Title({
                 key={seat.name}
                 className="seat"
                 layout
-                initial={{ opacity: 0, scale: 0.8 }}
+                initial={{ opacity: 0, scale: 0.94 }}
                 animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8 }}
+                exit={{ opacity: 0, scale: 0.94, transition: { duration: 0.12 } }}
+                transition={SPRING}
               >
                 <Avatar name={seat.name} index={index} bot={seat.bot} />
                 {seat.name}
@@ -480,15 +546,19 @@ function Title({
   );
 }
 
-function Stage({ orbis, kicker, line }: { orbis: OrbisSession; kicker: string; line: string }) {
+function Stage({
+  orbis,
+  kicker,
+  line,
+  clip,
+}: {
+  orbis: OrbisSession;
+  kicker: string;
+  line: string;
+  clip: string | null | undefined;
+}) {
   const [elapsed, setElapsed] = useState(0);
-  const [steering, setSteering] = useState(false);
-  useEffect(() => {
-    if (!orbis.showing) return;
-    setSteering(true);
-    const timer = setTimeout(() => setSteering(false), 9000);
-    return () => clearTimeout(timer);
-  }, [orbis.showing]);
+  const steering = clip === "static" || (!clip && orbis.tuning);
   useEffect(() => {
     if (orbis.onAir) return;
     const begin = Date.now();
@@ -521,7 +591,7 @@ function Stage({ orbis, kicker, line }: { orbis: OrbisSession; kicker: string; l
       <div className="screen">
         {orbis.connected && (
           <div className="feed">
-            <Tube flip={orbis.showing}>
+            <Tube tuning={orbis.tuning}>
               <ReactorView
                 track="main_video"
                 audioTrack="main_audio"
@@ -531,13 +601,21 @@ function Stage({ orbis, kicker, line }: { orbis: OrbisSession; kicker: string; l
             </Tube>
           </div>
         )}
+        {clip === "static" && <div className="feed no-signal" />}
+        {clip && clip !== "static" && (
+          <div className="feed" key={clip}>
+            <Tube tuning={false}>
+              <video src={clip} autoPlay muted loop playsInline />
+            </Tube>
+          </div>
+        )}
         <AnimatePresence>
           {!orbis.onAir && (
             <motion.div
               className="warmup"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              exit={{ opacity: 0, transition: { duration: 1.2 } }}
+              exit={{ opacity: 0, transition: { duration: 0.4, ease: EASE_OUT } }}
             >
               <div className="orb" aria-hidden>
                 <span />
@@ -569,11 +647,11 @@ function Stage({ orbis, kicker, line }: { orbis: OrbisSession; kicker: string; l
           {orbis.onAir && steering && (
             <motion.div
               className="steering"
-              initial={{ opacity: 0, x: -8 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0 }}
+              initial={{ opacity: 0, x: -4 }}
+              animate={{ opacity: 1, x: 0, transition: { duration: 0.18, ease: EASE_OUT } }}
+              exit={{ opacity: 0, transition: { duration: 0.12 } }}
             >
-              <i /> Steering the scene
+              <i /> Changing the channel
             </motion.div>
           )}
         </AnimatePresence>
@@ -585,10 +663,10 @@ function Stage({ orbis, kicker, line }: { orbis: OrbisSession; kicker: string; l
             <motion.div
               key={kicker + line}
               className="chyron"
-              initial={{ opacity: 0, y: 18 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 8 }}
-              transition={{ duration: 0.35, ease: [0.2, 0.8, 0.2, 1] }}
+              initial={{ opacity: 0, y: 10, filter: "blur(4px)" }}
+              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+              exit={{ opacity: 0, y: 4, transition: { duration: 0.12 } }}
+              transition={{ duration: 0.22, ease: EASE_OUT }}
             >
               <span className="kicker">{kicker}</span>
               <span className="line">{line}</span>
@@ -615,8 +693,8 @@ function BlackCard({ text, answer }: { text: string; answer?: string }) {
     <motion.div
       key={text}
       className="card black side-black"
-      initial={{ rotateY: -90, opacity: 0 }}
-      animate={{ rotateY: 0, opacity: 1 }}
+      initial={{ rotateY: -35, opacity: 0, scale: 0.97 }}
+      animate={{ rotateY: 0, opacity: 1, scale: 1 }}
       transition={SPRING}
     >
       <p>
@@ -626,9 +704,9 @@ function BlackCard({ text, answer }: { text: string; answer?: string }) {
             <AnimatePresence mode="wait">
               <motion.mark
                 key={word}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0, transition: { duration: 0.18, ease: EASE_OUT } }}
+                exit={{ opacity: 0, transition: { duration: 0.1 } }}
               >
                 {word}
               </motion.mark>
@@ -734,8 +812,8 @@ function Picking({
       <div className="gate">
         <motion.div
           className="gate-card"
-          initial={{ rotate: -3, scale: 0.94 }}
-          animate={{ rotate: 0, scale: 1 }}
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
           transition={SPRING}
         >
           <p className="eyebrow">Pass the screen</p>
@@ -787,14 +865,14 @@ function Picking({
               tabIndex={0}
               className={`card white in-hand ${active ? "active" : ""} ${item === BLANK ? "blank-card" : ""}`}
               style={{ zIndex: active ? 20 : index }}
-              initial={{ y: 120, opacity: 0, rotate: 0 }}
+              initial={{ y: 40, opacity: 0, rotate: 0 }}
               animate={{
                 y: active ? -34 : Math.abs(offset) * 5,
                 rotate: active ? 0 : offset * 2.6,
                 opacity: 1,
               }}
               whileHover={{ y: active ? -34 : -18, rotate: 0 }}
-              transition={{ ...SPRING, delay: index * 0.035 }}
+              transition={{ ...SPRING, delay: index * 0.03 }}
               onClick={() => setSelected(index)}
               onKeyDown={(event) => {
                 if (event.key !== "Enter" && event.key !== " ") return;
@@ -833,16 +911,21 @@ function Picking({
 function Judging({
   game,
   focus,
+  cache,
+  rendering,
   onLook,
   onCrown,
 }: {
   game: GameState;
   focus: number | null;
+  cache: (string | null | undefined)[];
+  rendering: number | null;
   onLook: (index: number) => void;
   onCrown: (index: number) => void;
 }) {
   const judge = judgeOf(game);
   const [seen, setSeen] = useState<number[]>([]);
+  const choice = useRef(Math.floor(Math.random() * game.picks.length));
   const look = (index: number) => {
     setSeen((list) => (list.includes(index) ? list : [...list, index]));
     onLook(index);
@@ -850,13 +933,19 @@ function Judging({
 
   useEffect(() => {
     if (!judge.bot) return;
-    const step = 10_000;
-    const timers = game.picks.map((_, index) => setTimeout(() => look(index), 900 + index * step));
-    const pick = Math.floor(Math.random() * game.picks.length);
-    timers.push(setTimeout(() => look(pick), 900 + game.picks.length * step));
-    timers.push(setTimeout(() => onCrown(pick), 900 + game.picks.length * step + 4500));
-    return () => timers.forEach(clearTimeout);
-  }, []);
+    const next = game.picks.findIndex((_, index) => !seen.includes(index));
+    if (next === -1) {
+      const again = setTimeout(() => look(choice.current), 5_000);
+      const decide = setTimeout(() => onCrown(choice.current), 10_000);
+      return () => {
+        clearTimeout(again);
+        clearTimeout(decide);
+      };
+    }
+    const ready = cache[next] !== undefined;
+    const timer = setTimeout(() => look(next), ready ? (seen.length ? 6_000 : 800) : 30_000);
+    return () => clearTimeout(timer);
+  }, [seen, cache[game.picks.findIndex((_, index) => !seen.includes(index))] !== undefined]);
 
   return (
     <div className="judging">
@@ -864,12 +953,12 @@ function Judging({
         <p>
           {judge.bot ? (
             <>
-              <b>{judge.name}</b> is watching every answer play out live…
+              <b>{judge.name}</b> is watching every answer on TV…
             </>
           ) : (
             <>
-              <b>{judge.name}</b>, tap each card to see it <b>live on screen</b>. Then crown the
-              best.
+              <b>{judge.name}</b>, tap a card to watch it. Ready cards replay instantly. Then crown
+              the best.
             </>
           )}
         </p>
@@ -885,9 +974,9 @@ function Judging({
             <motion.div
               key={`${pick.playerId}-${index}`}
               className={`answer ${live ? "live" : ""}`}
-              initial={{ y: 80, opacity: 0 }}
-              animate={{ y: live ? -14 : 0, opacity: 1 }}
-              transition={{ ...SPRING, delay: index * 0.06 }}
+              initial={{ y: 32, opacity: 0 }}
+              animate={{ y: live ? -12 : 0, opacity: 1 }}
+              transition={{ ...SPRING, delay: index * 0.04 }}
             >
               <motion.div
                 className="flip"
@@ -896,7 +985,7 @@ function Judging({
                 aria-label={open ? pick.card : `Answer ${index + 1}, face down`}
                 initial={{ rotateY: 180 }}
                 animate={{ rotateY: open ? 0 : 180 }}
-                transition={{ type: "spring", stiffness: 180, damping: 20 }}
+                transition={{ type: "spring", duration: 0.38, bounce: 0.1 }}
                 onClick={() => !judge.bot && look(index)}
                 onKeyDown={(event) => {
                   if (event.key !== "Enter" && event.key !== " ") return;
@@ -919,12 +1008,23 @@ function Judging({
                   </span>
                 </div>
               </motion.div>
-              {live && <span className="live-tag">● Live</span>}
+              {live && <span className="live-tag">● On screen</span>}
+              <span
+                className={`cache-tag ${cache[index] ? "ready" : rendering === index ? "busy" : ""}`}
+              >
+                {cache[index]
+                  ? "● Ready"
+                  : rendering === index
+                    ? "Rendering…"
+                    : cache[index] === null
+                      ? "Live only"
+                      : "Queued"}
+              </span>
               {!judge.bot && open && (
                 <motion.button
                   className="crown"
-                  initial={{ opacity: 0, y: -6 }}
-                  animate={{ opacity: 1, y: 0 }}
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0, transition: { duration: 0.18, ease: EASE_OUT } }}
                   onClick={() => onCrown(index)}
                 >
                   👑 Crown
@@ -959,9 +1059,9 @@ function Reveal({
     <div className="reveal">
       <motion.div
         className="card white winner-card"
-        initial={{ scale: 0.6, rotate: -12, y: 60 }}
-        animate={{ scale: 1, rotate: -3, y: 0 }}
-        transition={{ type: "spring", stiffness: 220, damping: 14 }}
+        initial={{ scale: 0.85, rotate: -10, y: 24, opacity: 0 }}
+        animate={{ scale: 1, rotate: -3, y: 0, opacity: 1 }}
+        transition={{ type: "spring", duration: 0.5, bounce: 0.35 }}
       >
         <span className="crown-badge">👑</span>
         <p>{card}</p>
@@ -970,9 +1070,9 @@ function Reveal({
       <div className="reveal-copy">
         <p className="eyebrow">{judge.name} crowned</p>
         <motion.h2
-          initial={{ opacity: 0, y: 12 }}
+          initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15 }}
+          transition={{ delay: 0.08, duration: 0.25, ease: EASE_OUT }}
         >
           <em>{winner.name}</em> takes the round
         </motion.h2>
@@ -993,7 +1093,7 @@ function Finale({
   onAgain,
 }: {
   game: GameState;
-  clips: (Clip | null)[];
+  clips: (string | null)[];
   orbis: OrbisSession;
   onAgain: () => void;
 }) {
@@ -1037,14 +1137,14 @@ function Finale({
           return (
             <motion.figure
               key={index}
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.08 }}
+              transition={{ delay: index * 0.05, duration: 0.3, ease: EASE_OUT }}
             >
               <div className="reel-shot">
                 {clip ? (
-                  <Tube width={480}>
-                    <ClipPlayer clip={clip} muted autoPlay />
+                  <Tube width={480} tuning={false}>
+                    <video src={clip} autoPlay muted loop playsInline />
                   </Tube>
                 ) : (
                   <span className="reel-still">

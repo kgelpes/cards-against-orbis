@@ -1,6 +1,6 @@
 "use client";
 
-import { type Clip, useReactor, useReactorMessage } from "@reactor-team/js-sdk";
+import { useReactor, useReactorMessage } from "@reactor-team/js-sdk";
 import { useEffect, useRef, useState } from "react";
 
 import { unwrapOrbisMessage } from "@/lib/orbis";
@@ -12,7 +12,7 @@ export function useOrbisSession(clearJwt: () => void, getCurrentJwt: () => strin
     connect,
     disconnect,
     sendCommand,
-    requestClip,
+    tracks,
     requestRecording,
     downloadClipAsFile,
   } = useReactor((state) => ({
@@ -21,7 +21,7 @@ export function useOrbisSession(clearJwt: () => void, getCurrentJwt: () => strin
     connect: state.connect,
     disconnect: state.disconnect,
     sendCommand: state.sendCommand,
-    requestClip: state.requestClip,
+    tracks: state.tracks,
     requestRecording: state.requestRecording,
     downloadClipAsFile: state.downloadClipAsFile,
   }));
@@ -36,7 +36,9 @@ export function useOrbisSession(clearJwt: () => void, getCurrentJwt: () => strin
   const wanted = useRef<string | null>(null);
   const current = useRef("");
   const pumping = useRef(false);
-  const conditionsReady = useRef<(() => void) | null>(null);
+  const waiters = useRef(new Map<string, () => void>());
+  const runPrompt = useRef("");
+  const [live, setLive] = useState("");
   const wantOpen = useRef(false);
   const inFlight = useRef(false);
   const epoch = useRef(0);
@@ -50,6 +52,7 @@ export function useOrbisSession(clearJwt: () => void, getCurrentJwt: () => strin
     started.current = false;
     chunks.current = 0;
     setOnAir(false);
+    setLive("");
     if (wantOpen.current && !inFlight.current && !retry.current) {
       setRetryIn(2);
       retry.current = setTimeout(() => {
@@ -86,23 +89,28 @@ export function useOrbisSession(clearJwt: () => void, getCurrentJwt: () => strin
     }).catch(() => undefined);
   }, [getCurrentJwt, sessionId]);
 
-  const startRun = async (prompt: string) => {
-    const ready = new Promise<void>((resolve, reject) => {
+  const waitFor = (type: string, ms: number) =>
+    new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
-        conditionsReady.current = null;
-        reject(new Error("Orbis did not get ready in time."));
-      }, 20_000);
-      conditionsReady.current = () => {
+        waiters.current.delete(type);
+        reject(new Error(`Orbis did not send ${type} in time.`));
+      }, ms);
+      waiters.current.set(type, () => {
         clearTimeout(timer);
         resolve();
-      };
+      });
     });
+
+  const startRun = async (prompt: string) => {
+    const ready = waitFor("conditions_ready", 20_000);
     const reply = unwrapOrbisMessage(await sendCommand("set_prompt", { prompt }));
     if (reply.type === "command_error") {
-      conditionsReady.current = null;
+      waiters.current.delete("conditions_ready");
+      ready.catch(() => undefined);
       throw new Error(`set_prompt: ${reply.reason || "rejected"}`);
     }
     await ready;
+    runPrompt.current = prompt;
     await sendCommand("start", {});
     started.current = true;
   };
@@ -115,9 +123,15 @@ export function useOrbisSession(clearJwt: () => void, getCurrentJwt: () => strin
         const prompt = wanted.current;
         wanted.current = null;
         current.current = prompt;
-        if (started.current) await sendCommand("set_prompt", { prompt });
-        else await startRun(prompt);
         setShowing(prompt);
+        if (started.current) {
+          started.current = false;
+          const reset = waitFor("generation_reset", 5_000);
+          await sendCommand("reset", {});
+          await reset.catch(() => undefined);
+        }
+        if (wanted.current !== null) continue;
+        await startRun(prompt);
         setError("");
       }
     } catch (caught) {
@@ -134,32 +148,55 @@ export function useOrbisSession(clearJwt: () => void, getCurrentJwt: () => strin
 
   useReactorMessage((raw) => {
     const message = unwrapOrbisMessage(raw);
-    if (message.type === "conditions_ready") {
-      conditionsReady.current?.();
-      conditionsReady.current = null;
-    } else if (message.type === "generation_started") {
+    const type = message.type ?? "";
+    waiters.current.get(type)?.();
+    waiters.current.delete(type);
+    if (type === "generation_started") {
       started.current = true;
       chunks.current = 0;
-    } else if (message.type === "chunk_complete") {
+    } else if (type === "chunk_complete") {
       chunks.current += 1;
-      if (chunks.current >= 2) setOnAir(true);
-    } else if (message.type === "generation_complete" || message.type === "generation_reset") {
+      if (chunks.current >= 2) {
+        setOnAir(true);
+        setLive(runPrompt.current);
+      }
+    } else if (type === "generation_reset") {
       started.current = false;
-      setOnAir(false);
+    } else if (type === "generation_complete") {
+      started.current = false;
       if (current.current && wanted.current === null) show(current.current);
-    } else if (message.type === "command_error") {
+    } else if (type === "command_error") {
       setError(`${message.command || "command"}: ${message.reason || "rejected"}`);
       if (message.command === "start") started.current = false;
     }
   });
 
-  const clip = async (seconds: number): Promise<Clip | null> => {
-    try {
-      return await requestClip(seconds);
-    } catch {
-      return null;
-    }
-  };
+  const record = (seconds: number) =>
+    new Promise<string | null>((resolve) => {
+      const track = tracks.main_video;
+      if (!track || track.readyState !== "live") return resolve(null);
+      const type = [
+        "video/webm;codecs=vp9",
+        "video/webm;codecs=vp8",
+        "video/webm",
+        "video/mp4",
+      ].find((candidate) => MediaRecorder.isTypeSupported(candidate));
+      const recorder = new MediaRecorder(new MediaStream([track]), {
+        mimeType: type,
+        videoBitsPerSecond: 8_000_000,
+      });
+      const parts: Blob[] = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size) parts.push(event.data);
+      };
+      recorder.onstop = () =>
+        resolve(
+          parts.length ? URL.createObjectURL(new Blob(parts, { type: recorder.mimeType })) : null,
+        );
+      recorder.onerror = () => resolve(null);
+      recorder.start();
+      setTimeout(() => recorder.state !== "inactive" && recorder.stop(), seconds * 1000);
+    });
 
   const saveEpisode = async () => {
     try {
@@ -223,13 +260,15 @@ export function useOrbisSession(clearJwt: () => void, getCurrentJwt: () => strin
     retrying: retryIn > 0,
     onAir,
     showing,
+    live,
+    tuning: showing !== "" && showing !== live,
     error,
     muted,
     toggleMuted: () => setMuted((value) => !value),
     open,
     close,
     show,
-    clip,
+    record,
     saveEpisode,
   };
 }

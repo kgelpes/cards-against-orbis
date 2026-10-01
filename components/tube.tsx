@@ -71,21 +71,23 @@ function signal(since: number) {
 
 export function Tube({
   children,
-  flip,
+  tuning,
   width = 960,
 }: {
   children: ReactNode;
-  flip?: string;
+  tuning: boolean;
   width?: number;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [raw, setRaw] = useState(false);
-  const flippedAt = useRef(Number.NEGATIVE_INFINITY);
+  const flippedAt = useRef(performance.now());
+  const holding = useRef(tuning);
 
   useEffect(() => {
-    if (flip) flippedAt.current = performance.now();
-  }, [flip]);
+    holding.current = tuning;
+    if (!tuning) flippedAt.current = performance.now();
+  }, [tuning]);
   const height = Math.round((width * 9) / 16);
 
   useEffect(() => {
@@ -119,7 +121,10 @@ export function Tube({
         try {
           gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
           gl.uniform1f(time, (now / 1000) % 1000);
-          gl.uniform1f(flipLevel, signal((now - flippedAt.current) / 1000));
+          gl.uniform1f(
+            flipLevel,
+            holding.current ? 0.85 : signal((now - flippedAt.current) / 1000),
+          );
           gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
         } catch {
           setRaw(true);
