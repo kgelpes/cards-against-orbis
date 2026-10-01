@@ -539,6 +539,7 @@ em {
 
 .orb {
   position: relative;
+  flex: none;
   width: 132px;
   height: 132px;
   margin-bottom: 22px;
@@ -905,8 +906,9 @@ em {
 
 .hand {
   display: flex;
-  justify-content: center;
-  padding: 44px 24px 8px;
+  justify-content: safe center;
+  overflow-x: auto;
+  padding: 44px 24px 12px;
 }
 
 .in-hand {
@@ -1042,6 +1044,10 @@ em {
   box-shadow:
     0 0 0 3px var(--red),
     0 0 60px -8px rgba(255, 77, 61, 0.7);
+}
+
+.flip:focus-visible .card {
+  box-shadow: 0 0 0 3px rgba(255, 211, 107, 0.7);
 }
 
 .flip:hover .back {
@@ -1287,7 +1293,33 @@ em {
   }
 
   .sound {
-    display: none;
+    padding: 6px 10px;
+    font-size: 10px;
+  }
+
+  .gate .primary {
+    white-space: normal;
+  }
+
+  .gate-card {
+    padding: 24px 20px;
+  }
+
+  .arena {
+    display: contents;
+  }
+
+  .stage {
+    order: 1;
+  }
+
+  .tray {
+    order: 2;
+    min-height: 0;
+  }
+
+  .side {
+    order: 3;
   }
 
   .draft {
@@ -1334,4 +1366,30 @@ em {
   border-top-color: var(--gold);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
+}
+
+@media (max-height: 820px) and (min-width: 1101px) {
+  .side-black {
+    min-height: 0;
+    padding: 18px 18px 44px;
+    font-size: 18px;
+  }
+
+  .scores li {
+    padding: 5px 8px;
+  }
+
+  .hand {
+    padding-top: 36px;
+  }
+
+  .in-hand,
+  .answer {
+    width: 138px;
+    font-size: 15px;
+  }
+
+  .tray {
+    min-height: 0;
+  }
 }

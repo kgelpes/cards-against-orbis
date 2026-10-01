@@ -42,7 +42,16 @@ const QUIPS = [
   "Roll it again. No, actually, keep it rolling.",
   "The producers are on the phone. They want a sequel.",
 ];
-const COLORS = ["#ff5a4e", "#ffb547", "#5ad1ff", "#9b7bff", "#4fe0a6", "#ff7ac3", "#ffe27a", "#8fb3ff"];
+const COLORS = [
+  "#ff5a4e",
+  "#ffb547",
+  "#5ad1ff",
+  "#9b7bff",
+  "#4fe0a6",
+  "#ff7ac3",
+  "#ffe27a",
+  "#8fb3ff",
+];
 const SPRING = { type: "spring", stiffness: 320, damping: 26 } as const;
 
 export function Game({ orbis }: { orbis: OrbisSession }) {
@@ -56,9 +65,11 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
   const show = useRef(0);
   const live = useRef(orbis);
   live.current = orbis;
-  const pending = useRef<{ index: number; at: number; timer: ReturnType<typeof setTimeout> } | null>(
-    null,
-  );
+  const pending = useRef<{
+    index: number;
+    at: number;
+    timer: ReturnType<typeof setTimeout>;
+  } | null>(null);
 
   const want = (prompt: string) => {
     if (desired.current === prompt) return;
@@ -157,10 +168,16 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
             line: fill(game.black, previewPick.card),
           }
         : game.phase === "over"
-          ? { kicker: "Season finale", line: `${champion(game)?.name ?? "Someone"} takes the trophy.` }
+          ? {
+              kicker: "Season finale",
+              line: `${champion(game)?.name ?? "Someone"} takes the trophy.`,
+            }
           : last
             ? { kicker: "Still playing", line: last.sentence }
-            : { kicker: "Live from the Orbis studio", line: "Tonight's episode is about to begin." };
+            : {
+                kicker: "Live from the Orbis studio",
+                line: "Tonight's episode is about to begin.",
+              };
 
   return (
     <div className="app">
@@ -199,7 +216,9 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
                 onDraft={setDraft}
                 onPlay={(playerId, card, written) => {
                   setDraft(null);
-                  setGame((current) => (current ? play(current, playerId, card, written) : current));
+                  setGame((current) =>
+                    current ? play(current, playerId, card, written) : current,
+                  );
                 }}
               />
             )}
@@ -211,7 +230,9 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
                   setPreview(index);
                   want(scene(fill(game.black, game.picks[index].card)));
                 }}
-                onCrown={(index) => setGame((current) => (current ? crown(current, index) : current))}
+                onCrown={(index) =>
+                  setGame((current) => (current ? crown(current, index) : current))
+                }
               />
             )}
             {game.phase === "reveal" && winner && game.winner && (
@@ -241,9 +262,21 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
 
 function burst() {
   const colors = ["#ffd36b", "#ff5a4e", "#ffffff", "#ffb547"];
-  void confetti({ particleCount: 140, spread: 80, startVelocity: 48, origin: { x: 0.35, y: 0.55 }, colors });
+  void confetti({
+    particleCount: 140,
+    spread: 80,
+    startVelocity: 48,
+    origin: { x: 0.35, y: 0.55 },
+    colors,
+  });
   setTimeout(() => {
-    void confetti({ particleCount: 90, spread: 110, startVelocity: 38, origin: { x: 0.65, y: 0.5 }, colors });
+    void confetti({
+      particleCount: 90,
+      spread: 110,
+      startVelocity: 38,
+      origin: { x: 0.65, y: 0.5 },
+      colors,
+    });
   }, 180);
 }
 
@@ -251,7 +284,16 @@ function Orbit({ size = 22 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden className="orbit">
       <circle cx="16" cy="16" r="7" fill="currentColor" />
-      <ellipse cx="16" cy="16" rx="14.5" ry="5.5" fill="none" stroke="currentColor" strokeWidth="1.8" transform="rotate(-24 16 16)" />
+      <ellipse
+        cx="16"
+        cy="16"
+        rx="14.5"
+        ry="5.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        transform="rotate(-24 16 16)"
+      />
     </svg>
   );
 }
@@ -424,12 +466,7 @@ function Title({
           ))}
         </div>
 
-        <button
-          className="primary big"
-          type="button"
-          disabled={seats.length < 3}
-          onClick={onStart}
-        >
+        <button className="primary big" type="button" disabled={seats.length < 3} onClick={onStart}>
           Open the studio <span aria-hidden>→</span>
         </button>
         <p className="fine">
@@ -448,7 +485,7 @@ function Stage({ orbis, kicker, line }: { orbis: OrbisSession; kicker: string; l
   useEffect(() => {
     if (!orbis.showing) return;
     setSteering(true);
-    const timer = setTimeout(() => setSteering(false), 7000);
+    const timer = setTimeout(() => setSteering(false), 9000);
     return () => clearTimeout(timer);
   }, [orbis.showing]);
   useEffect(() => {
@@ -504,8 +541,8 @@ function Stage({ orbis, kicker, line }: { orbis: OrbisSession; kicker: string; l
               </div>
               <p className="warmup-title">{label}…</p>
               <p className="warmup-sub">
-                Orbis spins up a real-time video model just for this table. The first boot can take a
-                minute or two, so start playing cards now.
+                Orbis spins up a real-time video model just for this table. The first boot can take
+                a minute or two, so start playing cards now.
               </p>
               {orbis.status === "disconnected" && !orbis.retrying ? (
                 <button className="primary" onClick={() => void orbis.open()}>
@@ -539,17 +576,19 @@ function Stage({ orbis, kicker, line }: { orbis: OrbisSession; kicker: string; l
           {orbis.muted ? "🔇 Sound off" : "🔊 Sound on"}
         </button>
         <AnimatePresence mode="wait">
-          <motion.div
-            key={kicker + line}
-            className="chyron"
-            initial={{ opacity: 0, y: 18 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            transition={{ duration: 0.35, ease: [0.2, 0.8, 0.2, 1] }}
-          >
-            <span className="kicker">{kicker}</span>
-            <span className="line">{line}</span>
-          </motion.div>
+          {orbis.onAir && (
+            <motion.div
+              key={kicker + line}
+              className="chyron"
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ duration: 0.35, ease: [0.2, 0.8, 0.2, 1] }}
+            >
+              <span className="kicker">{kicker}</span>
+              <span className="line">{line}</span>
+            </motion.div>
+          )}
         </AnimatePresence>
         {orbis.error && <div className="toast">{orbis.error}</div>}
       </div>
@@ -753,7 +792,9 @@ function Picking({
               transition={{ ...SPRING, delay: index * 0.035 }}
               onClick={() => setSelected(index)}
               onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") setSelected(index);
+                if (event.key !== "Enter" && event.key !== " ") return;
+                event.preventDefault();
+                setSelected(index);
               }}
             >
               {item === BLANK ? (
@@ -822,7 +863,8 @@ function Judging({
             </>
           ) : (
             <>
-              <b>{judge.name}</b>, tap each card to see it <b>live on screen</b>. Then crown the best.
+              <b>{judge.name}</b>, tap each card to see it <b>live on screen</b>. Then crown the
+              best.
             </>
           )}
         </p>
@@ -847,11 +889,14 @@ function Judging({
                 role="button"
                 tabIndex={0}
                 aria-label={open ? pick.card : `Answer ${index + 1}, face down`}
+                initial={{ rotateY: 180 }}
                 animate={{ rotateY: open ? 0 : 180 }}
                 transition={{ type: "spring", stiffness: 180, damping: 20 }}
                 onClick={() => !judge.bot && look(index)}
                 onKeyDown={(event) => {
-                  if (!judge.bot && (event.key === "Enter" || event.key === " ")) look(index);
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  if (!judge.bot) look(index);
                 }}
               >
                 <div className="card white face">

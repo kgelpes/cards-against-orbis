@@ -105,9 +105,7 @@ export function judgeOf(game: Game) {
 export function waitingOn(game: Game) {
   const judge = judgeOf(game);
   return game.players.filter(
-    (player) =>
-      player.id !== judge.id &&
-      !game.picks.some((pick) => pick.playerId === player.id),
+    (player) => player.id !== judge.id && !game.picks.some((pick) => pick.playerId === player.id),
   );
 }
 
@@ -131,9 +129,7 @@ export function play(
   const deck = game.whiteDeck.length ? game.whiteDeck : shuffle(discard, random);
   const hand = [...player.hand];
   hand.splice(hand.indexOf(card), 1, deck[0] ?? BLANK);
-  const players = game.players.map((item) =>
-    item.id === playerId ? { ...item, hand } : item,
-  );
+  const players = game.players.map((item) => (item.id === playerId ? { ...item, hand } : item));
   const picks = [...game.picks, { playerId, card: answer }];
   const next = {
     ...game,
@@ -170,11 +166,7 @@ export function champion(game: Game) {
   return game.players.find((player) => player.score >= game.target) ?? null;
 }
 
-export function nextRound(
-  game: Game,
-  blackCards: string[],
-  random = Math.random,
-): Game {
+export function nextRound(game: Game, blackCards: string[], random = Math.random): Game {
   if (game.phase !== "reveal") return game;
   if (champion(game)) return { ...game, phase: "over" };
   const blackDeck = game.blackDeck.length ? game.blackDeck : shuffle(blackCards, random);

@@ -5,10 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { unwrapOrbisMessage } from "@/lib/orbis";
 
-export function useOrbisSession(
-  clearJwt: () => void,
-  getCurrentJwt: () => string | null,
-) {
+export function useOrbisSession(clearJwt: () => void, getCurrentJwt: () => string | null) {
   const {
     status,
     sessionId,
@@ -146,10 +143,7 @@ export function useOrbisSession(
     } else if (message.type === "chunk_complete") {
       chunks.current += 1;
       if (chunks.current >= 2) setOnAir(true);
-    } else if (
-      message.type === "generation_complete" ||
-      message.type === "generation_reset"
-    ) {
+    } else if (message.type === "generation_complete" || message.type === "generation_reset") {
       started.current = false;
       setOnAir(false);
       if (current.current && wanted.current === null) show(current.current);

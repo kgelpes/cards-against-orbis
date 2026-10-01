@@ -1,16 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import {
-  BLANK,
-  crown,
-  fill,
-  judgeOf,
-  newGame,
-  nextRound,
-  play,
-  waitingOn,
-} from "./game.ts";
+import { BLANK, crown, fill, judgeOf, newGame, nextRound, play, waitingOn } from "./game.ts";
 
 const decks = {
   black: ["Breaking news: ____ is loose in the mall.", "____ wins gold.", "Nature documentary."],
@@ -25,7 +16,10 @@ function seeded(seed: number) {
 }
 
 test("fill puts the answer in the blank", () => {
-  assert.equal(fill("Breaking news: ____ is loose.", "a llama"), "Breaking news: A llama is loose.");
+  assert.equal(
+    fill("Breaking news: ____ is loose.", "a llama"),
+    "Breaking news: A llama is loose.",
+  );
   assert.equal(fill("I saw ____ today.", "a llama."), "I saw a llama today.");
   assert.equal(fill("____ wins gold.", "a llama"), "A llama wins gold.");
   assert.equal(fill("Nature documentary.", "a llama"), "Nature documentary. a llama.");

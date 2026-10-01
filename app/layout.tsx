@@ -23,8 +23,7 @@ const mono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "Cards Against Orbis",
-  description:
-    "The party card game where the winning card comes to life as live AI video.",
+  description: "The party card game where the winning card comes to life as live AI video.",
 };
 
 export const viewport: Viewport = { themeColor: "#09080a" };
