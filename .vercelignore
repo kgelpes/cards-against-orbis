@@ -4,3 +4,4 @@
 node_modules
 .reactor-dev-sessions.json*
 SUBMISSION.md
+worker

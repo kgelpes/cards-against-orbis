@@ -24,7 +24,8 @@ import {
   waitingOn,
 } from "@/lib/game";
 import { FINALE_PROMPT, LOBBY_PROMPT, scene } from "@/lib/orbis";
-import { type PhoneMessage, type PublicState, useRoom } from "@/lib/room";
+import { useTvBroadcast } from "@/lib/broadcast";
+import { type HostMessage, type PhoneMessage, type PublicState, useRoom } from "@/lib/room";
 import QRCode from "qrcode";
 
 const BOT_NAMES = [
@@ -226,7 +227,18 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
     setGame((current) => (current ? nextRound(current, BLACK_CARDS) : current));
   };
 
+  const sendRoom = useRef<(message: HostMessage) => void>(() => undefined);
+  const tv = useTvBroadcast((message) => sendRoom.current(message));
+
   const onPhone = (message: PhoneMessage) => {
+    if (message.t === "watch") {
+      void tv.watch(message.id);
+      return;
+    }
+    if (message.t === "rtc-answer") {
+      void tv.answer(message.id, message.sdp);
+      return;
+    }
     if (message.t === "join") {
       if (game) return;
       const name = message.name.trim().slice(0, 18);
@@ -256,6 +268,7 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
   };
 
   const room = useRoom<PhoneMessage>(code, "host", onPhone);
+  sendRoom.current = room.send;
 
   const publicState = (): PublicState => {
     if (!game) {

@@ -38,7 +38,8 @@ on [Orbis Stable](https://www.reactor.inc/models/visko-orbis-stable/api).
 The TV shows a room code and a QR code. Each player scans it and joins at
 `cards.bidslop.com/play/CODE`. Their phone becomes their hand: they pick or
 write their card in private, and the judge flips through the answers and
-crowns the winner from their phone while the TV plays every scene. Phones,
+crowns the winner from their phone. The TV also streams its screen to every
+phone over WebRTC, so players who are not in the room still see every scene. Phones,
 on-screen players and bots can mix in one game. A tiny Cloudflare Durable
 Object (`worker/`) relays messages between the TV and the phones; the TV runs
 the game.

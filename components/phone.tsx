@@ -1,9 +1,11 @@
 "use client";
 
 import { motion } from "motion/react";
-import { useEffect, useState, type ReactNode } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { BLANK, parts } from "@/lib/game";
+import { Tube } from "@/components/tube";
+import { usePhoneViewer } from "@/lib/broadcast";
 import { type HostMessage, type PhoneMessage, type PublicState, useRoom } from "@/lib/room";
 
 const SPRING = { type: "spring", duration: 0.3, bounce: 0.12 } as const;
@@ -39,6 +41,10 @@ export function Phone({ code }: { code: string }) {
     name ? room : null,
     "phone",
     (message) => {
+      if (message.t === "rtc") {
+        if (message.to === id) void viewer.offer(message.sdp);
+        return;
+      }
       if (message.t !== "state") return;
       setState(message.state);
       if (message.state.phase === "lobby" && !message.state.players.some((p) => p.id === id)) {
@@ -50,6 +56,8 @@ export function Phone({ code }: { code: string }) {
   useEffect(() => {
     if (connected && id && name) send({ t: "join", id, name });
   }, [connected]);
+
+  const viewer = usePhoneViewer(id, connected && Boolean(name), send);
 
   const join = () => {
     const nextId = id || newId();
@@ -160,7 +168,10 @@ export function Phone({ code }: { code: string }) {
           <Orbit size={16} /> Cards Against Orbis
         </span>
         <span className="phone-me">
-          <i className={connected ? "phone-dot on" : "phone-dot"} aria-label={connected ? "Connected" : "Reconnecting"} />
+          <i
+            className={connected ? "phone-dot on" : "phone-dot"}
+            aria-label={connected ? "Connected" : "Reconnecting"}
+          />
           {name && (
             <>
               {name} · {me?.score ?? 0}
@@ -168,6 +179,13 @@ export function Phone({ code }: { code: string }) {
           )}
         </span>
       </header>
+      {name && viewer.stream && (
+        <div className="phone-tv">
+          <Tube tuning={false} width={640}>
+            <StreamVideo stream={viewer.stream} />
+          </Tube>
+        </div>
+      )}
       <motion.section
         key={screenKey}
         className="phone-body"
@@ -289,7 +307,11 @@ function Judging({ state, id, send }: Props) {
               </span>
               <p>{answer}</p>
             </button>
-            <button type="button" className="phone-crown" onClick={() => send({ t: "crown", id, index })}>
+            <button
+              type="button"
+              className="phone-crown"
+              onClick={() => send({ t: "crown", id, index })}
+            >
               👑 Crown
             </button>
           </div>
@@ -341,4 +363,14 @@ function Orbit({ size }: { size: number }) {
       />
     </svg>
   );
+}
+
+function StreamVideo({ stream }: { stream: MediaStream }) {
+  const video = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    if (!video.current) return;
+    video.current.srcObject = stream;
+    void video.current.play().catch(() => undefined);
+  }, [stream]);
+  return <video ref={video} autoPlay muted playsInline />;
 }

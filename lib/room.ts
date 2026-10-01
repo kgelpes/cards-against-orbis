@@ -33,9 +33,13 @@ export type PhoneMessage =
   | { t: "play"; id: string; card: string; written: string }
   | { t: "look"; id: string; index: number }
   | { t: "crown"; id: string; index: number }
-  | { t: "next"; id: string };
+  | { t: "next"; id: string }
+  | { t: "watch"; id: string }
+  | { t: "rtc-answer"; id: string; sdp: string };
 
-export type HostMessage = { t: "state"; state: PublicState };
+export type HostMessage =
+  | { t: "state"; state: PublicState }
+  | { t: "rtc"; to: string; sdp: string };
 
 export function useRoom<In>(
   code: string | null,
