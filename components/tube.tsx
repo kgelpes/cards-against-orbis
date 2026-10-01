@@ -5,7 +5,11 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 const VERT = `attribute vec2 p; void main() { gl_Position = vec4(p, 0.0, 1.0); }`;
 
 const FRAG = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
 precision mediump float;
+#endif
 uniform sampler2D u_tex;
 uniform vec2 u_res;
 uniform float u_time;
@@ -91,7 +95,10 @@ export function Tube({
   const height = Math.round((width * 9) / 16);
 
   useEffect(() => {
-    const gl = canvas.current?.getContext("webgl", { antialias: false });
+    const element = canvas.current;
+    const lost = () => setRaw(true);
+    element?.addEventListener("webglcontextlost", lost);
+    const gl = element?.getContext("webgl", { antialias: false });
     const program = gl ? compile(gl) : null;
     if (!gl || !program) {
       setRaw(true);
@@ -134,7 +141,10 @@ export function Tube({
       frame = requestAnimationFrame(draw);
     };
     frame = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frame);
+      element?.removeEventListener("webglcontextlost", lost);
+    };
   }, [width, height]);
 
   return (

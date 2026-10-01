@@ -70,6 +70,10 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
   const show = useRef(0);
   const live = useRef(orbis);
   live.current = orbis;
+  const renderingRef = useRef<number | null>(null);
+  renderingRef.current = rendering;
+  const roundRef = useRef(0);
+  roundRef.current = game?.history.length ?? 0;
   const want = (prompt: string) => {
     if (desired.current === prompt) return;
     desired.current = prompt;
@@ -88,6 +92,7 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
   useEffect(() => {
     if (!game) return;
     if (game.phase === "judging") {
+      for (const url of cache) if (url && !clips.includes(url)) URL.revokeObjectURL(url);
       setCache([]);
       setRendering(null);
       setPreview(null);
@@ -118,9 +123,13 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
     if (rendering === null || orbis.live !== answerPrompt(rendering)) return;
     const id = show.current;
     const index = rendering;
+    const round = roundRef.current;
     const timer = setTimeout(async () => {
       const clip = await live.current.record(6);
-      if (show.current !== id) return;
+      if (show.current !== id || roundRef.current !== round || renderingRef.current !== index) {
+        if (clip) URL.revokeObjectURL(clip);
+        return;
+      }
       setCache((list) => {
         const next = [...list];
         next[index] = clip;
@@ -130,6 +139,21 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
     }, 1_200);
     return () => clearTimeout(timer);
   }, [rendering, orbis.live]);
+
+  useEffect(() => {
+    if (rendering === null) return;
+    const index = rendering;
+    const timer = setTimeout(() => {
+      setCache((list) => {
+        if (list[index] !== undefined) return list;
+        const next = [...list];
+        next[index] = null;
+        return next;
+      });
+      setRendering((current) => (current === index ? null : current));
+    }, 30_000);
+    return () => clearTimeout(timer);
+  }, [rendering]);
 
   useEffect(() => {
     if (!game || game.phase !== "reveal" || winnerClip || clips[rounds - 1] !== undefined) return;
@@ -149,8 +173,13 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
     return () => clearTimeout(timer);
   }, [phase, rounds, orbis.live, winnerClip]);
 
+  const release = () => {
+    for (const url of [...cache, ...clips]) if (url) URL.revokeObjectURL(url);
+  };
+
   const start = () => {
     show.current += 1;
+    release();
     setGame(newGame(seats, { black: BLACK_CARDS, white: WHITE_CARDS }, target));
     setClips([]);
     setPreview(null);
@@ -163,6 +192,7 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
 
   const exit = () => {
     show.current += 1;
+    release();
     setGame(null);
     desired.current = "";
     void orbis.close();
@@ -415,8 +445,8 @@ function Title({
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.06, duration: 0.4, ease: EASE_OUT }}
         >
-          Fill in the blank. Then watch the winning card <b>come to life</b> as live AI video,
-          streamed in real time by Orbis. One world, one screen, steered by your worst ideas.
+          Fill in the blank. Then the TV tunes in to <b>every answer as live AI video</b>, generated
+          in real time by Orbis and steered by your worst ideas.
         </motion.p>
         <ol className="steps">
           <li>
@@ -430,7 +460,7 @@ function Title({
           <li>
             <span>3</span>
             <p>
-              The judge flips each answer and sees it <b>live on screen</b>, then crowns one.
+              The TV plays every answer <b>live</b>. The judge flips between them and crowns one.
             </p>
           </li>
         </ol>

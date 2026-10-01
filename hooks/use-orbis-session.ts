@@ -43,6 +43,8 @@ export function useOrbisSession(clearJwt: () => void, getCurrentJwt: () => strin
   const inFlight = useRef(false);
   const epoch = useRef(0);
   const retry = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const drops = useRef(0);
+  const failures = useRef(0);
   const [retryIn, setRetryIn] = useState(0);
 
   const connected = status === "ready";
@@ -53,13 +55,19 @@ export function useOrbisSession(clearJwt: () => void, getCurrentJwt: () => strin
     chunks.current = 0;
     setOnAir(false);
     setLive("");
-    if (wantOpen.current && !inFlight.current && !retry.current) {
-      setRetryIn(2);
-      retry.current = setTimeout(() => {
-        retry.current = null;
-        void open();
-      }, 2_000);
+    if (!wantOpen.current || inFlight.current || retry.current) return;
+    if (drops.current >= 2) {
+      wantOpen.current = false;
+      setRetryIn(0);
+      setError("The studio went dark. Press Reconnect to go back on air.");
+      return;
     }
+    drops.current += 1;
+    setRetryIn(2);
+    retry.current = setTimeout(() => {
+      retry.current = null;
+      void open(true);
+    }, 2_000);
   }, [status]);
 
   useEffect(() => {
@@ -124,20 +132,32 @@ export function useOrbisSession(clearJwt: () => void, getCurrentJwt: () => strin
         wanted.current = null;
         current.current = prompt;
         setShowing(prompt);
-        if (started.current) {
+        setLive("");
+        try {
+          if (started.current) {
+            started.current = false;
+            chunks.current = 0;
+            const reset = waitFor("generation_reset", 5_000);
+            await sendCommand("reset", {});
+            await reset.catch(() => undefined);
+          }
+          if (wanted.current !== null) continue;
+          await startRun(prompt);
+          failures.current = 0;
+          setError("");
+        } catch (caught) {
           started.current = false;
-          const reset = waitFor("generation_reset", 5_000);
-          await sendCommand("reset", {});
-          await reset.catch(() => undefined);
+          setError(caught instanceof Error ? caught.message : String(caught));
+          if (wanted.current === null && failures.current < 2) {
+            failures.current += 1;
+            await new Promise((resolve) => setTimeout(resolve, 2_500));
+            if (wanted.current === null) wanted.current = prompt;
+          }
         }
-        if (wanted.current !== null) continue;
-        await startRun(prompt);
-        setError("");
       }
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       pumping.current = false;
+      if (wanted.current !== null) void pump();
     }
   };
 
@@ -183,7 +203,7 @@ export function useOrbisSession(clearJwt: () => void, getCurrentJwt: () => strin
       ].find((candidate) => MediaRecorder.isTypeSupported(candidate));
       const recorder = new MediaRecorder(new MediaStream([track]), {
         mimeType: type,
-        videoBitsPerSecond: 8_000_000,
+        videoBitsPerSecond: 4_000_000,
       });
       const parts: Blob[] = [];
       recorder.ondataavailable = (event) => {
@@ -209,7 +229,8 @@ export function useOrbisSession(clearJwt: () => void, getCurrentJwt: () => strin
     }
   };
 
-  const open = async () => {
+  const open = async (auto = false) => {
+    if (!auto) drops.current = 0;
     wantOpen.current = true;
     const mine = ++epoch.current;
     if (retry.current) clearTimeout(retry.current);
@@ -229,7 +250,7 @@ export function useOrbisSession(clearJwt: () => void, getCurrentJwt: () => strin
       retry.current = setTimeout(
         () => {
           retry.current = null;
-          void open();
+          void open(true);
         },
         busy ? 8_000 : 5_000,
       );

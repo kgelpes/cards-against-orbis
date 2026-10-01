@@ -1307,6 +1307,16 @@ em {
 
   .line {
     max-width: 100%;
+    font-size: 14px;
+  }
+
+  .kicker {
+    font-size: 10px;
+  }
+
+  .chyron {
+    gap: 4px;
+    padding: 40px 14px 12px;
   }
 
   .sound {
