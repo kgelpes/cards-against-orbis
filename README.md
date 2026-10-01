@@ -9,7 +9,7 @@ a live TV broadcast, _tunes in to each answer_: Orbis renders every answer as it
 own live scene, and the judge flips between them instantly before crowning one.
 The winning world keeps running on air while the next round starts.
 
-Play it: **https://cards.bidslop.com**
+Play it: **https://cards.bidslop.com** · Watch the 2-minute demo: [docs/demo.mp4](docs/demo.mp4)
 
 Built for the
 [Visko Orbis Online Challenge, September 2026](https://www.visko.ai/challenge/orbis-september-2026)
