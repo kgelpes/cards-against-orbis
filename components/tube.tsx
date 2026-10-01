@@ -65,8 +65,8 @@ function compile(gl: WebGLRenderingContext) {
 }
 
 function signal(since: number) {
-  if (since < 0.5) return 1 - since * 0.6;
-  return 0.7 * Math.exp(-(since - 0.5) * 1.6);
+  if (since < 0.12) return 1;
+  return Math.exp(-(since - 0.12) * 6);
 }
 
 export function Tube({
