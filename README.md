@@ -1,51 +1,78 @@
 # Cards Against Orbis
 
-A party card game in the style of Cards Against Humanity. When a card wins, you
-see it happen: [Orbis](https://www.visko.ai) makes the winning sentence into
-live video.
+**The party card game where the winning card comes to life as live AI video.**
+
+Fill in the blank like any late-night card game. Then the judge flips each
+answer, and the big screen _turns into that scene_, live, in about two seconds.
+The judge watches every answer play out, crowns the best one, and that world
+keeps running on screen while the next round starts.
 
 Built for the
-[Visko Orbis Online Challenge, September 2026](https://www.visko.ai/challenge/orbis-september-2026).
-Deadline: **October 1, 2026, 12:00 PM PT**.
+[Visko Orbis Online Challenge, September 2026](https://www.visko.ai/challenge/orbis-september-2026)
+on [Orbis Stable](https://www.reactor.inc/models/visko-orbis-stable/api).
 
 ## How it plays
 
-1. 3 or more players sit around one screen (a laptop or a TV).
-2. Each round, one player is the judge. The judge reads a black card out loud,
-   for example: "The new museum exhibit is just \_\_\_\_."
-3. The other players pick a white card from their hand, one at a time. The
-   screen asks to pass the device between players.
-4. The judge sees the answers with no names and picks the funniest one.
-5. **The reveal:** the winning sentence goes to Orbis, and the big video turns
-   into that scene, live. The winner gets a point.
-6. The judge role moves to the next player. Repeat.
+1. 3 to 8 players share one screen (laptop or TV). Bots can fill seats, so you
+   can play alone with two bots.
+2. Each round one player is the **judge**. A black card sets a scene:
+   _"Wedding video: the guests gasp as the bride walks down the aisle arm in arm
+   with \_\_\_\_."_
+3. Everyone else plays a white card from a hand of 7. The screen hides each hand
+   until the right player taps "Show my cards", so you pass the device around.
+   **Write-your-own** blank cards let you type anything, and it becomes video.
+4. **Live judging.** Answers arrive face down. The judge flips each one, and
+   Orbis steers the live video to that sentence. The judge literally watches
+   each answer before crowning one.
+5. **The reveal.** Confetti, a point, and the winning scene keeps playing.
+6. First to 3, 5 or 7 points wins. The finale shows **the reel**: a clip of every
+   winning scene, plus a download of the full episode.
 
-## Why Orbis is the point, not a gimmick
+## Why Orbis is the game, not a gimmick
 
-Orbis does not make a clip. It runs one live video stream, and a new prompt
-steers it in about 1.8 seconds. So:
+Orbis runs one continuous, steerable video stream. That shapes every part of
+the design:
 
-- The video never stops. One live "world" runs for the whole game.
-- Each winning card steers that same world. The scenes flow into each other,
-  so a game becomes one strange story that the players wrote together.
-- Between rounds, the last winner keeps playing on the big screen while players
-  pick cards.
+- **One world for the whole game.** The stream never cuts. Each preview and each
+  winner morphs the same world into the next scene, so a game becomes one
+  strange movie that the table wrote together.
+- **Judging is real-time interaction.** The judge flips through answers and the
+  scene follows each tap at the next ~1.8 s chunk. Without real-time steering,
+  this mechanic cannot exist.
+- **The video is the scoreboard of taste.** Players learn to write for the
+  camera: concrete, filmable, absurd.
+- **Warm-up is hidden in play.** The studio connects when the game starts, so
+  the model boots while players pick their first cards.
 
-This matches the first judging rule: real-time interaction must be essential.
+## Run it
 
-## Judging criteria (from the challenge page)
+Needs Node 22+, pnpm, and a Reactor API key from [reactor.inc](https://reactor.inc).
 
-1. **Real-time interaction:** Orbis must be an essential part of the experience.
-2. **Creativity:** an original use case past normal video.
-3. **Functionality:** the core interaction must work clearly. It does not need
-   to be polished.
+```bash
+cp .env.example .env.local
+```
 
-## Stack
+Put your key in `.env.local` as `REACTOR_API_KEY=...`, then:
 
-- Next.js 16 + React 19, from the
-  [Orbis starter](https://github.com/Visko-Platform/orbis-online-hackathon-starter).
-- `@reactor-team/js-sdk` to connect to `reactor/visko-orbis-stable` over WebRTC.
-- A `REACTOR_API_KEY` in `.env.local` (copy `.env.example`). The key stays on
-  the server; the browser only gets a short-lived JWT from `/api/token`.
+```bash
+pnpm install
+```
 
-See [PLAN.md](PLAN.md) for what is done and what is next.
+```bash
+pnpm dev
+```
+
+Open http://localhost:3000, add players (or bots), and press **Open the studio**.
+The first boot of the model can take a minute; play cards while it warms up.
+
+## How it works
+
+| Piece                        | What it does                                                                                                                                                                                                                        |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lib/game.ts`                | Pure game rules: deal, play, judge rotation, crown, bots, write-in cards. Tested with `pnpm test`.                                                                                                                                  |
+| `lib/cards.ts`               | 45 black and 150 white original cards, written to make strong pictures (places, camera setups, creatures, chaos), not text-only jokes.                                                                                              |
+| `hooks/use-orbis-session.ts` | `show(prompt)`: the first call does `set_prompt` → waits for `conditions_ready` → `start`; later calls `set_prompt` on the live run. Fast taps coalesce to the latest prompt. Restarts the run if Orbis ends it. Clips and episode download use the SDK recorder. |
+| `components/game.tsx`        | The studio UI: live stage with ambient glow, chyron captions, hands, flip-to-preview judging, reveal, finale reel.                                                                                                                  |
+| `app/api/token/route.ts`     | Exchanges the server-side API key for a short-lived, single-session JWT. The key never reaches the browser.                                                                                                                         |
+
+Stack: Next.js 16, React 19, `@reactor-team/js-sdk`, Motion, canvas-confetti.

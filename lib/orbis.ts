@@ -5,19 +5,20 @@ export const ORBIS_TRACKS = [
   { name: "main_audio", kind: "audio", direction: "recvonly" },
 ] as const;
 
-export const DOCUMENTED_RESOLUTIONS = ["1080p", "2k", "4k"];
+export const LOBBY_PROMPT =
+  "A glamorous late-night TV game show stage, red velvet curtains, sweeping golden spotlights, glitter drifting through the air, an excited studio audience in silhouette, slow cinematic dolly shot.";
+
+export const FINALE_PROMPT =
+  "A wildly extravagant award show finale, a giant golden trophy rising on a glittering stage, fireworks and golden confetti raining down, a cheering crowd, sweeping crane shot, cinematic.";
+
+export function scene(sentence: string) {
+  return `${sentence} Photoreal cinematic comedy scene, vivid detail, dramatic lighting, dynamic camera move.`;
+}
 
 export type OrbisMessage = {
   type?: string;
   command?: string;
   reason?: string;
-  available_resolutions?: string[];
-  width?: number;
-  height?: number;
-  has_image?: boolean;
-  image_conditioned?: boolean;
-  started?: boolean;
-  paused?: boolean;
 };
 
 export function unwrapOrbisMessage(raw: unknown): OrbisMessage {
@@ -25,7 +26,7 @@ export function unwrapOrbisMessage(raw: unknown): OrbisMessage {
   if (envelope?.data && typeof envelope.data === "object") {
     return { ...envelope.data, type: envelope.type } as OrbisMessage;
   }
-  return raw as OrbisMessage;
+  return (raw ?? {}) as OrbisMessage;
 }
 
 export async function requestReactorJwt() {
