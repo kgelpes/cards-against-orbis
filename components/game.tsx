@@ -5,7 +5,7 @@ import confetti from "canvas-confetti";
 import { AnimatePresence, motion } from "motion/react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
-import { Painted } from "@/components/painted";
+import { Tube } from "@/components/tube";
 import type { OrbisSession } from "@/hooks/use-orbis-session";
 import { BLACK_CARDS, WHITE_CARDS } from "@/lib/cards";
 import {
@@ -505,7 +505,9 @@ function Stage({ orbis, kicker, line }: { orbis: OrbisSession; kicker: string; l
         ? "Booting a live video model for you"
         : orbis.status === "connecting"
           ? "Calling the studio"
-          : "Studio is dark";
+          : elapsed < 4
+            ? "Calling the studio"
+            : "Studio is dark";
 
   return (
     <div className="stage">
@@ -519,14 +521,14 @@ function Stage({ orbis, kicker, line }: { orbis: OrbisSession; kicker: string; l
       <div className="screen">
         {orbis.connected && (
           <div className="feed">
-            <Painted>
+            <Tube flip={orbis.showing}>
               <ReactorView
                 track="main_video"
                 audioTrack="main_audio"
                 muted={orbis.muted}
                 videoObjectFit="cover"
               />
-            </Painted>
+            </Tube>
           </div>
         )}
         <AnimatePresence>
@@ -547,7 +549,7 @@ function Stage({ orbis, kicker, line }: { orbis: OrbisSession; kicker: string; l
                 Orbis spins up a real-time video model just for this table. The first boot can take
                 a minute or two, so start playing cards now.
               </p>
-              {orbis.status === "disconnected" && !orbis.retrying ? (
+              {orbis.status === "disconnected" && !orbis.retrying && elapsed >= 4 ? (
                 <button className="primary" onClick={() => void orbis.open()}>
                   Reconnect the studio
                 </button>
@@ -1041,9 +1043,9 @@ function Finale({
             >
               <div className="reel-shot">
                 {clip ? (
-                  <Painted width={320} radius={3}>
+                  <Tube width={480}>
                     <ClipPlayer clip={clip} muted autoPlay />
-                  </Painted>
+                  </Tube>
                 ) : (
                   <span className="reel-still">
                     <Orbit size={28} />

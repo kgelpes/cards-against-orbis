@@ -8,55 +8,42 @@ const FRAG = `
 precision mediump float;
 uniform sampler2D u_tex;
 uniform vec2 u_res;
-uniform float u_radius;
+uniform float u_time;
+uniform float u_flip;
 
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 vec3 tex(vec2 uv) { return texture2D(u_tex, clamp(uv, 0.0, 1.0)).rgb; }
-float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
 
 void main() {
   vec2 frag = vec2(gl_FragCoord.x, u_res.y - gl_FragCoord.y);
   vec2 uv = frag / u_res;
-  vec2 px = 1.0 / u_res;
-  vec3 m0 = vec3(0.0), m1 = vec3(0.0), m2 = vec3(0.0), m3 = vec3(0.0);
-  vec3 s0 = vec3(0.0), s1 = vec3(0.0), s2 = vec3(0.0), s3 = vec3(0.0);
-  float n = 0.0;
-  for (int j = 0; j <= 5; j++) {
-    for (int i = 0; i <= 5; i++) {
-      if (float(i) > u_radius || float(j) > u_radius) continue;
-      vec2 o = vec2(float(i), float(j)) * px;
-      vec3 c;
-      c = tex(uv + vec2(-o.x, -o.y)); m0 += c; s0 += c * c;
-      c = tex(uv + vec2(o.x, -o.y)); m1 += c; s1 += c * c;
-      c = tex(uv + vec2(-o.x, o.y)); m2 += c; s2 += c * c;
-      c = tex(uv + vec2(o.x, o.y)); m3 += c; s3 += c * c;
-      n += 1.0;
-    }
+  vec2 c = uv - 0.5;
+  float r2 = dot(c, c);
+  vec2 bent = 0.5 + c * (1.0 + 0.11 * r2 + 0.05 * r2 * r2);
+  if (bent.x < 0.0 || bent.x > 1.0 || bent.y < 0.0 || bent.y > 1.0) {
+    gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+    return;
   }
-  m0 /= n; m1 /= n; m2 /= n; m3 /= n;
-  float v0 = dot(abs(s0 / n - m0 * m0), vec3(1.0));
-  float v1 = dot(abs(s1 / n - m1 * m1), vec3(1.0));
-  float v2 = dot(abs(s2 / n - m2 * m2), vec3(1.0));
-  float v3 = dot(abs(s3 / n - m3 * m3), vec3(1.0));
-  vec3 col = m0;
-  float best = v0;
-  if (v1 < best) { best = v1; col = m1; }
-  if (v2 < best) { best = v2; col = m2; }
-  if (v3 < best) { best = v3; col = m3; }
-
-  vec2 o = 1.6 * px;
-  float tl = luma(tex(uv + vec2(-o.x, o.y))), t = luma(tex(uv + vec2(0.0, o.y))), tr = luma(tex(uv + o));
-  float l = luma(tex(uv - vec2(o.x, 0.0))), r = luma(tex(uv + vec2(o.x, 0.0)));
-  float bl = luma(tex(uv - o)), b = luma(tex(uv - vec2(0.0, o.y))), br = luma(tex(uv + vec2(o.x, -o.y)));
-  float gx = -tl - 2.0 * l - bl + tr + 2.0 * r + br;
-  float gy = -bl - 2.0 * b - br + tl + 2.0 * t + tr;
-  float edge = smoothstep(0.4, 0.85, length(vec2(gx, gy)));
-
-  float g = luma(col);
-  col = mix(vec3(g), col, 1.3);
-  col = mix(col, col * 0.25, edge * 0.6);
-  col *= vec3(1.04, 1.0, 0.94);
-  vec2 q = uv - 0.5;
-  col *= 1.0 - dot(q, q) * 0.8;
+  float line = floor(frag.y / 2.0);
+  float jitter = u_flip * (hash(vec2(line, floor(u_time * 30.0))) - 0.5) * 0.08
+    + u_flip * sin(frag.y * 0.05 + u_time * 40.0) * 0.02;
+  vec2 st = vec2(bent.x + jitter, fract(bent.y + u_flip * 0.35));
+  vec2 ca = (bent - 0.5) * 0.006 + vec2(0.0015, 0.0);
+  vec3 col = vec3(tex(st + ca).r, tex(st).g, tex(st - ca).b);
+  vec2 px = 1.5 / u_res;
+  vec3 glow = (tex(st + vec2(px.x, 0.0)) + tex(st - vec2(px.x, 0.0))
+    + tex(st + vec2(0.0, px.y)) + tex(st - vec2(0.0, px.y))) * 0.25;
+  col = mix(col, glow, 0.35) + max(glow - 0.6, 0.0) * 0.6;
+  float l = dot(col, vec3(0.299, 0.587, 0.114));
+  col = mix(vec3(l), col, 1.2) * vec3(1.05, 1.0, 0.94);
+  col *= 0.78 + 0.22 * sin(frag.y * 3.14159);
+  float m = mod(frag.x, 3.0);
+  col *= vec3(m < 1.0 ? 1.08 : 0.94, m >= 1.0 && m < 2.0 ? 1.08 : 0.94, m >= 2.0 ? 1.08 : 0.94);
+  float roll = smoothstep(0.0, 0.04, abs(fract(bent.y - u_time * 0.07) - 0.5) - 0.44);
+  col *= 1.0 + roll * 0.06;
+  col += (hash(frag + fract(u_time) * 100.0) - 0.5) * 0.05;
+  col = mix(col, vec3(hash(floor(frag / 2.0) + floor(u_time * 24.0)) * 0.9), u_flip * 0.75);
+  col *= 1.0 - smoothstep(0.18, 0.5, r2) * 0.75;
   gl_FragColor = vec4(col, 1.0);
 }`;
 
@@ -77,18 +64,28 @@ function compile(gl: WebGLRenderingContext) {
   return gl.getProgramParameter(program, gl.LINK_STATUS) ? program : null;
 }
 
-export function Painted({
+function signal(since: number) {
+  if (since < 0.5) return 1 - since * 0.6;
+  return 0.7 * Math.exp(-(since - 0.5) * 1.6);
+}
+
+export function Tube({
   children,
-  width = 640,
-  radius = 5,
+  flip,
+  width = 960,
 }: {
   children: ReactNode;
+  flip?: string;
   width?: number;
-  radius?: number;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [raw, setRaw] = useState(false);
+  const flippedAt = useRef(Number.NEGATIVE_INFINITY);
+
+  useEffect(() => {
+    if (flip) flippedAt.current = performance.now();
+  }, [flip]);
   const height = Math.round((width * 9) / 16);
 
   useEffect(() => {
@@ -110,16 +107,19 @@ export function Painted({
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.uniform2f(gl.getUniformLocation(program, "u_res"), width, height);
-    gl.uniform1f(gl.getUniformLocation(program, "u_radius"), radius);
+    const time = gl.getUniformLocation(program, "u_time");
+    const flipLevel = gl.getUniformLocation(program, "u_flip");
     gl.viewport(0, 0, width, height);
 
     let frame = 0;
-    const draw = () => {
+    const draw = (now: number) => {
       const video = host.current?.querySelector("video");
       if (video && video.readyState >= 2 && video.videoWidth > 0) {
         video.loop = true;
         try {
           gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
+          gl.uniform1f(time, (now / 1000) % 1000);
+          gl.uniform1f(flipLevel, signal((now - flippedAt.current) / 1000));
           gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
         } catch {
           setRaw(true);
@@ -130,11 +130,11 @@ export function Painted({
     };
     frame = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(frame);
-  }, [width, height, radius]);
+  }, [width, height]);
 
   return (
-    <div ref={host} className={`painted ${raw ? "raw" : ""}`}>
-      <div className="painted-source">{children}</div>
+    <div ref={host} className={`tube ${raw ? "raw" : ""}`}>
+      <div className="tube-source">{children}</div>
       <canvas ref={canvas} width={width} height={height} aria-hidden />
     </div>
   );
