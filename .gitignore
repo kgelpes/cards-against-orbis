@@ -16,3 +16,10 @@ dist
 # env
 .env
 .env*.local
+
+# next
+.next
+next-env.d.ts
+.env.local
+.reactor-dev-sessions.json
+.reactor-dev-sessions.json.*.tmp
