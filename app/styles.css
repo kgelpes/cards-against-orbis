@@ -1393,3 +1393,50 @@ em {
     min-height: 0;
   }
 }
+
+.pixelate {
+  position: absolute;
+  inset: 0;
+}
+
+.pixelate-source {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pixelate-source > div,
+.pixelate-source video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.pixelate canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+.pixelate.raw .pixelate-source {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.pixelate.raw canvas {
+  display: none;
+}
+
+.kicker,
+.onair,
+.steering,
+.live-tag,
+.reel-num,
+.warmup-time {
+  font-family: var(--font-pixel), monospace;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+}

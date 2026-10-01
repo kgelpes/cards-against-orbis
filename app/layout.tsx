@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Instrument_Serif, Inter_Tight, JetBrains_Mono } from "next/font/google";
+import { Instrument_Serif, Inter_Tight, JetBrains_Mono, Silkscreen } from "next/font/google";
 import type { ReactNode } from "react";
 
 import "./styles.css";
@@ -21,6 +21,12 @@ const mono = JetBrains_Mono({
   variable: "--font-mono",
 });
 
+const pixel = Silkscreen({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-pixel",
+});
+
 export const metadata: Metadata = {
   title: "Cards Against Orbis",
   description: "The party card game where the winning card comes to life as live AI video.",
@@ -30,7 +36,10 @@ export const viewport: Viewport = { themeColor: "#09080a" };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${display.variable} ${sans.variable} ${mono.variable}`}>
+    <html
+      lang="en"
+      className={`${display.variable} ${sans.variable} ${mono.variable} ${pixel.variable}`}
+    >
       <body>{children}</body>
     </html>
   );
