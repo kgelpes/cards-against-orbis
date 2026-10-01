@@ -40,6 +40,11 @@ export function useOrbisSession(
   const current = useRef("");
   const pumping = useRef(false);
   const conditionsReady = useRef<(() => void) | null>(null);
+  const wantOpen = useRef(false);
+  const inFlight = useRef(false);
+  const epoch = useRef(0);
+  const retry = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [retryIn, setRetryIn] = useState(0);
 
   const connected = status === "ready";
 
@@ -48,6 +53,13 @@ export function useOrbisSession(
     started.current = false;
     chunks.current = 0;
     setOnAir(false);
+    if (wantOpen.current && !inFlight.current && !retry.current) {
+      setRetryIn(2);
+      retry.current = setTimeout(() => {
+        retry.current = null;
+        void open();
+      }, 2_000);
+    }
   }, [status]);
 
   useEffect(() => {
@@ -105,9 +117,9 @@ export function useOrbisSession(
       while (wanted.current !== null) {
         const prompt = wanted.current;
         wanted.current = null;
+        current.current = prompt;
         if (started.current) await sendCommand("set_prompt", { prompt });
         else await startRun(prompt);
-        current.current = prompt;
         setShowing(prompt);
         setError("");
       }
@@ -167,15 +179,41 @@ export function useOrbisSession(
   };
 
   const open = async () => {
+    wantOpen.current = true;
+    const mine = ++epoch.current;
+    if (retry.current) clearTimeout(retry.current);
+    retry.current = null;
     setError("");
+    clearJwt();
+    inFlight.current = true;
     try {
       await connect();
+      if (epoch.current === mine) setRetryIn(0);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
+      if (epoch.current !== mine || !wantOpen.current) return;
+      const message = caught instanceof Error ? caught.message : String(caught);
+      const busy = /429|capacity/i.test(message);
+      setError(busy ? "Every Orbis studio is busy right now. Retrying…" : message);
+      setRetryIn(busy ? 8 : 5);
+      retry.current = setTimeout(
+        () => {
+          retry.current = null;
+          void open();
+        },
+        busy ? 8_000 : 5_000,
+      );
+    } finally {
+      if (epoch.current === mine) inFlight.current = false;
     }
   };
 
   const close = async () => {
+    wantOpen.current = false;
+    epoch.current += 1;
+    inFlight.current = false;
+    if (retry.current) clearTimeout(retry.current);
+    retry.current = null;
+    setRetryIn(0);
     started.current = false;
     setOnAir(false);
     try {
@@ -188,6 +226,7 @@ export function useOrbisSession(
   return {
     status,
     connected,
+    retrying: retryIn > 0,
     onAir,
     showing,
     error,

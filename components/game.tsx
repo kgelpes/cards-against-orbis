@@ -33,6 +33,15 @@ const BOT_NAMES = [
   "Deep Fake Dave",
 ];
 const TARGETS = [3, 5, 7];
+const QUIPS = [
+  "The studio audience is losing it.",
+  "Orbis rendered that with a completely straight face.",
+  "Somewhere, a film critic quietly weeps.",
+  "This is now canon. The world remembers.",
+  "Nobody asked for this. Everybody needed it.",
+  "Roll it again. No, actually, keep it rolling.",
+  "The producers are on the phone. They want a sequel.",
+];
 const COLORS = ["#ff5a4e", "#ffb547", "#5ad1ff", "#9b7bff", "#4fe0a6", "#ff7ac3", "#ffe27a", "#8fb3ff"];
 const SPRING = { type: "spring", stiffness: 320, damping: 26 } as const;
 
@@ -85,7 +94,7 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
     setClips([]);
     setPreview(null);
     want(LOBBY_PROMPT);
-    if (orbis.status === "disconnected") void orbis.open();
+    if (!orbis.connected) void orbis.open();
   };
 
   const exit = () => {
@@ -192,6 +201,7 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
                 sentence={last?.sentence ?? ""}
                 final={Boolean(champion(game))}
                 judge={judge}
+                quip={QUIPS[(rounds - 1) % QUIPS.length]}
                 onNext={() => {
                   setPreview(null);
                   setGame((current) => (current ? nextRound(current, BLACK_CARDS) : current));
@@ -413,6 +423,13 @@ function Title({
 
 function Stage({ orbis, kicker, line }: { orbis: OrbisSession; kicker: string; line: string }) {
   const [elapsed, setElapsed] = useState(0);
+  const [steering, setSteering] = useState(false);
+  useEffect(() => {
+    if (!orbis.showing) return;
+    setSteering(true);
+    const timer = setTimeout(() => setSteering(false), 7000);
+    return () => clearTimeout(timer);
+  }, [orbis.showing]);
   useEffect(() => {
     if (orbis.onAir) return;
     const begin = Date.now();
@@ -421,8 +438,9 @@ function Stage({ orbis, kicker, line }: { orbis: OrbisSession; kicker: string; l
     return () => clearInterval(timer);
   }, [orbis.onAir]);
 
-  const label =
-    orbis.status === "ready"
+  const label = orbis.retrying
+    ? "Waiting for a free studio"
+    : orbis.status === "ready"
       ? "Rolling the first frames"
       : orbis.status === "waiting"
         ? "Booting a live video model for you"
@@ -468,9 +486,15 @@ function Stage({ orbis, kicker, line }: { orbis: OrbisSession; kicker: string; l
                 Orbis spins up a real-time video model just for this table. The first boot can take a
                 minute or two, so start playing cards now.
               </p>
-              <p className="warmup-time">
-                {orbis.status} · {elapsed}s
-              </p>
+              {orbis.status === "disconnected" && !orbis.retrying ? (
+                <button className="primary" onClick={() => void orbis.open()}>
+                  Reconnect the studio
+                </button>
+              ) : (
+                <p className="warmup-time">
+                  {orbis.status} · {elapsed}s
+                </p>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -478,6 +502,18 @@ function Stage({ orbis, kicker, line }: { orbis: OrbisSession; kicker: string; l
           <span />
           {orbis.onAir ? "On air" : "Standby"}
         </div>
+        <AnimatePresence>
+          {orbis.onAir && steering && (
+            <motion.div
+              className="steering"
+              initial={{ opacity: 0, x: -8 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0 }}
+            >
+              <i /> Steering the scene
+            </motion.div>
+          )}
+        </AnimatePresence>
         <button className="sound" onClick={orbis.toggleMuted} aria-label="Toggle sound">
           {orbis.muted ? "🔇 Sound off" : "🔊 Sound on"}
         </button>
@@ -747,7 +783,7 @@ function Judging({
 
   useEffect(() => {
     if (!judge.bot) return;
-    const step = 7000;
+    const step = 10_000;
     const timers = game.picks.map((_, index) => setTimeout(() => look(index), 900 + index * step));
     const pick = Math.floor(Math.random() * game.picks.length);
     timers.push(setTimeout(() => look(pick), 900 + game.picks.length * step));
@@ -837,6 +873,7 @@ function Reveal({
   sentence,
   final,
   judge,
+  quip,
   onNext,
 }: {
   card: string;
@@ -844,6 +881,7 @@ function Reveal({
   sentence: string;
   final: boolean;
   judge: Player;
+  quip: string;
   onNext: () => void;
 }) {
   return (
@@ -868,7 +906,7 @@ function Reveal({
           <em>{winner.name}</em> takes the round
         </motion.h2>
         <p className="sentence">“{sentence}”</p>
-        <p className="muted">Watch it play out live. Orbis keeps this world running until the next winner.</p>
+        <p className="muted">{quip} This world keeps running until the next winner.</p>
         <button className="primary big" onClick={onNext}>
           {final ? "Crown the champion" : "Next round"} <span aria-hidden>→</span>
         </button>

@@ -3,7 +3,7 @@
 **The party card game where the winning card comes to life as live AI video.**
 
 Fill in the blank like any late-night card game. Then the judge flips each
-answer, and the big screen _turns into that scene_, live, in about two seconds.
+answer, and the big screen _turns into that scene_, live, in a few seconds.
 The judge watches every answer play out, crowns the best one, and that world
 keeps running on screen while the next round starts.
 
@@ -37,7 +37,7 @@ the design:
   winner morphs the same world into the next scene, so a game becomes one
   strange movie that the table wrote together.
 - **Judging is real-time interaction.** The judge flips through answers and the
-  scene follows each tap at the next ~1.8 s chunk. Without real-time steering,
+  scene follows each tap within a few seconds. Without real-time steering,
   this mechanic cannot exist.
 - **The video is the scoreboard of taste.** Players learn to write for the
   camera: concrete, filmable, absurd.

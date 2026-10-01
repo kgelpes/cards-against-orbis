@@ -1303,3 +1303,35 @@ em {
     transition: none !important;
   }
 }
+
+.warmup .primary {
+  margin-top: 18px;
+}
+
+.steering {
+  position: absolute;
+  top: 16px;
+  left: 128px;
+  z-index: 3;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 12px;
+  border: 1px solid rgba(255, 211, 107, 0.35);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(10px);
+  color: var(--gold);
+  font: 700 11px var(--font-mono), monospace;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.steering i {
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(255, 211, 107, 0.3);
+  border-top-color: var(--gold);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
