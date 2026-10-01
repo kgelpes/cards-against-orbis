@@ -5,6 +5,7 @@ export type Player = {
   id: string;
   name: string;
   bot: boolean;
+  remote: boolean;
   hand: string[];
   score: number;
 };
@@ -33,7 +34,7 @@ export type Game = {
   phase: Phase;
 };
 
-export type Seat = { name: string; bot: boolean };
+export type Seat = { name: string; bot: boolean; id?: string; remote?: boolean };
 
 export function shuffle<T>(items: T[], random = Math.random): T[] {
   const copy = [...items];
@@ -79,7 +80,14 @@ export function newGame(
   const players = seats.map((seat, index) => {
     const hand = [...whiteDeck.slice(0, HAND_SIZE - 1), BLANK];
     whiteDeck = whiteDeck.slice(HAND_SIZE - 1);
-    return { id: `p${index}`, name: seat.name, bot: seat.bot, hand, score: 0 };
+    return {
+      id: seat.id ?? `p${index}`,
+      name: seat.name,
+      bot: seat.bot,
+      remote: Boolean(seat.remote),
+      hand,
+      score: 0,
+    };
   });
   const blackDeck = shuffle(decks.black, random);
   const game: Game = {

@@ -33,6 +33,16 @@ on [Orbis Stable](https://www.reactor.inc/models/visko-orbis-stable/api).
 6. First to 3, 5 or 7 points wins. The finale shows **the reel**: a clip of every
    winning scene, plus a download of the full episode.
 
+## Play with phones
+
+The TV shows a room code and a QR code. Each player scans it and joins at
+`cards.bidslop.com/play/CODE`. Their phone becomes their hand: they pick or
+write their card in private, and the judge flips through the answers and
+crowns the winner from their phone while the TV plays every scene. Phones,
+on-screen players and bots can mix in one game. A tiny Cloudflare Durable
+Object (`worker/`) relays messages between the TV and the phones; the TV runs
+the game.
+
 ## Why Orbis is the game, not a gimmick
 
 - **Judging is real-time interaction.** Every answer becomes its own live Orbis
@@ -80,6 +90,8 @@ The first boot of the model can take a minute; play cards while it warms up.
 | `hooks/use-orbis-session.ts` | `show(prompt)`: a hard cut to a new world (`reset` → `set_prompt` → wait for `conditions_ready` → `start`). Fast changes coalesce to the latest prompt. `record(seconds)` records the live track in the browser (MediaRecorder) for instant replays. Restarts the run if Orbis ends it. |
 | `components/tube.tsx`        | WebGL shader that draws any `<video>` (the live stream or a recorded replay) as a CRT broadcast: barrel curve, RGB fringe, scanlines, glow, and channel-flip static while a new scene tunes in.                                                                                         |
 | `components/game.tsx`        | The studio UI: live stage with ambient glow, chyron captions, hands, flip-to-preview judging, reveal, finale reel.                                                                                                                                                                      |
+| `lib/room.ts`, `worker/`     | Multiplayer: a WebSocket hook and a Cloudflare Durable Object relay at `room.bidslop.com`. The TV broadcasts game state; phones send join, play, look, crown and next.                                                                                                                  |
+| `components/phone.tsx`       | The phone controller at `/play/CODE`: join, private hand with write-ins, judge controls, next round.                                                                                                                                                                                    |
 | `app/api/token/route.ts`     | Exchanges the server-side API key for a short-lived, single-session JWT. The key never reaches the browser.                                                                                                                                                                             |
 
 Stack: Next.js 16, React 19, `@reactor-team/js-sdk`, Motion, canvas-confetti.

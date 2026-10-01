@@ -24,6 +24,8 @@ import {
   waitingOn,
 } from "@/lib/game";
 import { FINALE_PROMPT, LOBBY_PROMPT, scene } from "@/lib/orbis";
+import { type PhoneMessage, type PublicState, useRoom } from "@/lib/room";
+import QRCode from "qrcode";
 
 const BOT_NAMES = [
   "Orbot 3000",
@@ -66,6 +68,13 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
   const [cache, setCache] = useState<(string | null | undefined)[]>([]);
   const [rendering, setRendering] = useState<number | null>(null);
   const [winnerClip, setWinnerClip] = useState<string | null>(null);
+  const [code, setCode] = useState<string | null>(null);
+  useEffect(() => {
+    const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+    setCode(
+      Array.from({ length: 4 }, () => letters[Math.floor(Math.random() * letters.length)]).join(""),
+    );
+  }, []);
   const desired = useRef("");
   const show = useRef(0);
   const live = useRef(orbis);
@@ -198,9 +207,118 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
     void orbis.close();
   };
 
+  const crownAt = (index: number) => {
+    const clip = cache[index] ?? null;
+    setRendering(null);
+    setWinnerClip(clip);
+    if (clip) {
+      setClips((list) => {
+        const next = [...list];
+        next[rounds] = clip;
+        return next;
+      });
+    }
+    setGame((current) => (current ? crown(current, index) : current));
+  };
+
+  const advance = () => {
+    setPreview(null);
+    setGame((current) => (current ? nextRound(current, BLACK_CARDS) : current));
+  };
+
+  const onPhone = (message: PhoneMessage) => {
+    if (message.t === "join") {
+      if (game) return;
+      const name = message.name.trim().slice(0, 18);
+      if (!name) return;
+      setSeats((list) =>
+        list.some((seat) => seat.id === message.id)
+          ? list.map((seat) => (seat.id === message.id ? { ...seat, name } : seat))
+          : list.length >= 8
+            ? list
+            : [...list, { name, bot: false, id: message.id, remote: true }],
+      );
+      return;
+    }
+    if (!game) return;
+    const judgeId = judgeOf(game).id;
+    if (message.t === "play") {
+      setGame((current) =>
+        current ? play(current, message.id, message.card, message.written) : current,
+      );
+    } else if (message.t === "look" && game.phase === "judging" && judgeId === message.id) {
+      if (game.picks[message.index]) setPreview(message.index);
+    } else if (message.t === "crown" && game.phase === "judging" && judgeId === message.id) {
+      if (game.picks[message.index]) crownAt(message.index);
+    } else if (message.t === "next" && game.phase === "reveal") {
+      if (game.players.some((player) => player.id === message.id)) advance();
+    }
+  };
+
+  const room = useRoom<PhoneMessage>(code, "host", onPhone);
+
+  const publicState = (): PublicState => {
+    if (!game) {
+      return {
+        phase: "lobby",
+        black: "",
+        target,
+        round: 0,
+        players: seats.map((seat, index) => ({
+          id: seat.id ?? `p${index}`,
+          name: seat.name,
+          bot: seat.bot,
+          remote: Boolean(seat.remote),
+          score: 0,
+        })),
+        judgeId: null,
+        waiting: [],
+        hands: {},
+        answers: [],
+        ready: [],
+        preview: null,
+        winner: null,
+        champion: null,
+      };
+    }
+    const winnerPlayer = game.players.find((player) => player.id === game.winner?.playerId);
+    const lastRound = game.history[game.history.length - 1];
+    return {
+      phase: game.phase,
+      black: game.black,
+      target: game.target,
+      round: game.history.length,
+      players: game.players.map((player) => ({
+        id: player.id,
+        name: player.name,
+        bot: player.bot,
+        remote: player.remote,
+        score: player.score,
+      })),
+      judgeId: judgeOf(game).id,
+      waiting: waitingOn(game).map((player) => player.id),
+      hands: Object.fromEntries(
+        game.players.filter((player) => player.remote).map((player) => [player.id, player.hand]),
+      ),
+      answers: game.phase === "picking" ? [] : game.picks.map((pick) => pick.card),
+      ready: game.picks.map((_, index) => Boolean(cache[index])),
+      preview,
+      winner:
+        winnerPlayer && game.winner && lastRound
+          ? { name: winnerPlayer.name, card: game.winner.card, sentence: lastRound.sentence }
+          : null,
+      champion: champion(game)?.name ?? null,
+    };
+  };
+
+  useEffect(() => {
+    if (room.connected) room.send({ t: "state", state: publicState() });
+  }, [room.connected, game, seats, preview, cache, target]);
+
   if (!game) {
     return (
       <Title
+        code={code}
         seats={seats}
         setSeats={setSeats}
         target={target}
@@ -311,19 +429,7 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
                   cache={cache}
                   rendering={rendering}
                   onLook={setPreview}
-                  onCrown={(index) => {
-                    const clip = cache[index] ?? null;
-                    setRendering(null);
-                    setWinnerClip(clip);
-                    if (clip) {
-                      setClips((list) => {
-                        const next = [...list];
-                        next[rounds] = clip;
-                        return next;
-                      });
-                    }
-                    setGame((current) => (current ? crown(current, index) : current));
-                  }}
+                  onCrown={crownAt}
                 />
               )}
               {game.phase === "reveal" && winner && game.winner && (
@@ -334,10 +440,7 @@ export function Game({ orbis }: { orbis: OrbisSession }) {
                   final={Boolean(champion(game))}
                   judge={judge}
                   quip={QUIPS[(rounds - 1) % QUIPS.length]}
-                  onNext={() => {
-                    setPreview(null);
-                    setGame((current) => (current ? nextRound(current, BLACK_CARDS) : current));
-                  }}
+                  onNext={advance}
                 />
               )}
               {game.phase === "over" && (
@@ -401,12 +504,14 @@ function Brand() {
 }
 
 function Title({
+  code,
   seats,
   setSeats,
   target,
   setTarget,
   onStart,
 }: {
+  code: string | null;
   seats: Seat[];
   setSeats: (seats: Seat[]) => void;
   target: number;
@@ -419,6 +524,18 @@ function Title({
     setSeats([...seats, { ...seat, name: seat.name.trim().slice(0, 18) }]);
   };
   const nextBot = BOT_NAMES.find((bot) => !seats.some((seat) => seat.name === bot));
+  const [qr, setQr] = useState("");
+  const [origin, setOrigin] = useState("");
+  useEffect(() => setOrigin(window.location.origin), []);
+  const joinUrl = code && origin ? `${origin}/play/${code}` : "";
+  useEffect(() => {
+    if (!joinUrl) return;
+    void QRCode.toDataURL(joinUrl, {
+      margin: 1,
+      width: 240,
+      color: { dark: "#09080a", light: "#f7f4ec" },
+    }).then(setQr);
+  }, [joinUrl]);
 
   return (
     <main className="title">
@@ -500,11 +617,21 @@ function Title({
         }}
       >
         <h2>Who&apos;s playing?</h2>
+        {joinUrl && (
+          <div className="join">
+            {qr && <img src={qr} alt={`QR code to join room ${code}`} width={104} height={104} />}
+            <div>
+              <p className="eyebrow">Play from your phone</p>
+              <p className="join-code">{code}</p>
+              <p className="fine join-url">{joinUrl.replace(/^https?:\/\//, "")}</p>
+            </div>
+          </div>
+        )}
         <div className="seats">
           <AnimatePresence initial={false}>
             {seats.map((seat, index) => (
               <motion.span
-                key={seat.name}
+                key={seat.id ?? seat.name}
                 className="seat"
                 layout
                 initial={{ opacity: 0, scale: 0.94 }}
@@ -514,6 +641,7 @@ function Title({
               >
                 <Avatar name={seat.name} index={index} bot={seat.bot} />
                 {seat.name}
+                {seat.remote && <span aria-label="on a phone">📱</span>}
                 <button
                   type="button"
                   aria-label={`Remove ${seat.name}`}
@@ -823,9 +951,11 @@ function Picking({
   const [shown, setShown] = useState<string | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [written, setWritten] = useState("");
-  const player = waitingOn(game)[0];
+  const waiting = waitingOn(game);
+  const player = waiting.find((item) => !item.remote);
+  const phones = waiting.filter((item) => item.remote);
   const judge = judgeOf(game);
-  const humans = game.players.filter((item) => !item.bot).length;
+  const humans = game.players.filter((item) => !item.bot && !item.remote).length;
   const gated = humans > 1 && shown !== player?.id;
   const card = selected === null || !player ? null : player.hand[selected];
   const answer = card === BLANK ? written : card;
@@ -835,7 +965,19 @@ function Picking({
     onDraft(!gated && ready && answer ? answer : null);
   }, [gated, ready, answer]);
 
-  if (!player) return null;
+  if (!player) {
+    return (
+      <div className="gate">
+        <div className="gate-card">
+          <p className="eyebrow">📱 Phones are picking</p>
+          <h2>
+            Waiting for <em>{phones.map((item) => item.name).join(", ")}</em>
+          </h2>
+          <p>Play your card on your phone. {judge.name} is judging this round.</p>
+        </div>
+      </div>
+    );
+  }
 
   if (gated) {
     return (
@@ -955,6 +1097,10 @@ function Judging({
 }) {
   const judge = judgeOf(game);
   const [seen, setSeen] = useState<number[]>([]);
+  const driven = judge.bot || judge.remote;
+  useEffect(() => {
+    if (focus !== null) setSeen((list) => (list.includes(focus) ? list : [...list, focus]));
+  }, [focus]);
   const choice = useRef(Math.floor(Math.random() * game.picks.length));
   const look = (index: number) => {
     setSeen((list) => (list.includes(index) ? list : [...list, index]));
@@ -981,7 +1127,11 @@ function Judging({
     <div className="judging">
       <div className="tray-head">
         <p>
-          {judge.bot ? (
+          {judge.remote ? (
+            <>
+              📱 <b>{judge.name}</b> is judging from their phone. Watch the TV.
+            </>
+          ) : judge.bot ? (
             <>
               <b>{judge.name}</b> is watching every answer on TV…
             </>
@@ -1016,11 +1166,11 @@ function Judging({
                 initial={{ rotateY: 180 }}
                 animate={{ rotateY: open ? 0 : 180 }}
                 transition={{ type: "spring", duration: 0.38, bounce: 0.1 }}
-                onClick={() => !judge.bot && look(index)}
+                onClick={() => !driven && look(index)}
                 onKeyDown={(event) => {
                   if (event.key !== "Enter" && event.key !== " ") return;
                   event.preventDefault();
-                  if (!judge.bot) look(index);
+                  if (!driven) look(index);
                 }}
               >
                 <div className="card white face">
@@ -1050,7 +1200,7 @@ function Judging({
                       ? "Live only"
                       : "Queued"}
               </span>
-              {!judge.bot && open && (
+              {!driven && open && (
                 <motion.button
                   className="crown"
                   initial={{ opacity: 0, y: -4 }}
